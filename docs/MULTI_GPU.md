@@ -159,18 +159,46 @@ The Coder on an RTX 5080 + RTX 3090 (Ryzen 9 9950X3D), 32K context; details in
 
 - **Prompts gain the most** (+18-20%): each card reads its own layers of the chunk while the other reads the next.
 - **Decode is on par with the faster card alone**, and ahead on code. Once both caches hold nearly every routed
-  expert, the per-layer GPU time decides.
+  expert, the per-layer GPU time decides. (Measured before the hand-off changes below: on 2x RX 7900 XTX they took
+  the split from slower than one card, 55.0 vs 60.1 tok/s, to 72.2.)
 - **Correctness:** one GPU is byte-identical to 0.1.20, and the hand-off itself is bit-exact.
 
 **Which cards and in what order:**
 - Put the fastest card first; auto gives it as many layers as its cache allows.
-- With cards of the same speed, put the one that drives the desktop last, and keep VRAM free with
-  `--vram-reserve-mib 3072`. On 2x RX 7900 XTX, the desktop card first with the default reserve left 21 GB of its
-  memory in system RAM: 80 instead of 1,152-1,268 tok/s on a 4.5K prompt, and 15 instead of 56-68 tok/s decode
-  ([AMD_HIP.md](AMD_HIP.md#model-and-serving-configuration), "Two cards, one of them the desktop's").
+- When a card drives the desktop, keep VRAM free with `--vram-reserve-mib 3072`. On 2x RX 7900 XTX, the desktop
+  card first with the default 700 MiB reserve left 21 GB of its memory in system RAM: 80 instead of 1,152-1,268
+  tok/s on a 4.5K prompt, and 15 instead of 56-68 tok/s decode ([AMD_HIP.md](AMD_HIP.md#model-and-serving-configuration),
+  "Two cards, one of them the desktop's"). With the 3 GB reserve, either order decoded the same there (72.2 tok/s
+  with the desktop card second, 74.5 first).
 - Leave out a much slower card when two already hold the model. An RTX 2080 Ti as a third card made the 5080 +
   3090 pair slower (68 / 90 tok/s decode): every extra card costs its own round per window.
 - More cards pay off when the model's routed experts do not fit the faster ones.
+
+## Decode on a split: the stages' hand-off
+
+A decode window runs the stages one after the other, so the time between them counts in full. Two changes (2026-10-05,
+bench/results/2026-10-05-split-decode-7900xtx) shorten it; both are on for a split across GPUs and change nothing on
+one GPU:
+
+- **The commit does not wait** (`STRATA_SPLIT_COMMIT_SYNC=1` restores the wait): each stage returns from its commit
+  at once, as a single GPU already did; every later use of a session waits on the stages' commit events.
+- **A later stage's window is launched early** (`STRATA_SPLIT_EARLY_LAUNCH=0` turns it off): a worker thread launches
+  the stage's window graph while the stage before it still runs; the graph waits on a flag until the hand-off is
+  written. The graph launch (1.25-1.5 ms of CPU for ~1,200 kernels on ROCm) leaves the path between the stages, and
+  the waiting card stays clocked up (on RDNA3 the shader clock drops in idle gaps: 1,525 -> 2,948 MHz median on the
+  waiting card).
+
+2x RX 7900 XTX, IQ3_XXS, 128K context, MTP, greedy, median of a story and a code prompt x3:
+
+| | decode tok/s |
+|---|---|
+| before | 55.0 |
+| the commit does not wait | 57.5 |
+| and the early launch | **72.2** |
+| one card alone | 59.3-60.1 |
+
+The tokens are the same (fresh-start greedy answers bit-identical). `STRATA_SPLIT_TIMING=1` prints per stage and
+window the wait for the GPU, the pool, the commit, the graph launch and the final sync.
 
 ## Several conversations at once
 

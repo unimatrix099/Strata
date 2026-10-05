@@ -10,4 +10,6 @@ for line in open(path):
     if "error" in r:
         print(f'{r["label"]:28s} ERROR {r["error"]}'); continue
     runs = " ".join(f'{x["prompt"][0]}{x["rep"]}:{x["sha"][:6]}:{x["tok_s"]}' for x in r["runs"])
+    if "prefill" in r:
+        print(f'{r["label"]:28s} prefill {r["prefill"]:7.1f} tok/s | {runs}'); continue
     print(f'{r["label"]:28s} story {r["story"]:5.1f} code {r["code"]:5.1f} all {r["median"]:5.1f} | {runs}')
