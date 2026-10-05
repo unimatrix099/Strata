@@ -178,6 +178,38 @@ class ParallelArgs(unittest.TestCase):
         self.assertFalse(said(["--batch-mtp"], None))    # --batch-mtp waves more through the window
         self.assertFalse(said([], "1"))
 
+    def test_pick_slot_spreads_over_groups(self):
+        # 8 slots in 2 groups of 4: slot 0 (group 0) runs; slot 5 (group 1) was used longest ago and holds a
+        # conversation, slots 1-3 (group 0) are used later and empty - the new request goes to group 1 all the same
+        e = StrataEngine.__new__(StrataEngine)
+        e.slot_gs = 4
+        e.slot_order = [0, 4, 1, 5, 2, 6, 3, 7]
+        e.slot_busy = [True] + [False] * 7
+        e.slot_held = [[] for _ in range(8)]
+        e.slot_held[5] = [9, 9]
+        e.slot_used = [0.0, 5.0, 5.0, 5.0, 3.0, 1.0, 4.0, 4.0]
+        self.assertEqual(e.pick_slot([1, 2, 3]), 4)          # group 1, empty
+        e.slot_busy[4] = True
+        self.assertEqual(e.pick_slot([1, 2, 3]), 6)          # groups 1:1 busy, 0:1 busy -> empty first, oldest
+        e.slot_held[5] = [1, 2]
+        self.assertEqual(e.pick_slot([1, 2, 3]), 5)          # a slot holding the prompt's start still wins
+        e.slot_gs = 8                                       # one group: the old order (empty first, oldest)
+        e.slot_held[5] = [9, 9]
+        e.slot_busy = [True] + [False] * 7
+        self.assertEqual(e.pick_slot([1, 2, 3]), 4)
+
+    def test_parallel_batch_groups_on_a_split(self):
+        # a layer split pipelines the slots through its cards; one GPU never gets groups
+        two = {"parallel": 8, "gpu": [1, 0]}
+        self.assertEqual(parallel_args(two, []), ["--batch", "8", "--batch-groups", "2"])
+        self.assertEqual(parallel_args({"parallel": 8, "gpu": 1}, []), ["--batch", "8"])
+        self.assertEqual(parallel_args({"parallel": 3, "gpu": [0, 1]}, []), ["--batch", "3"])        # 2 does not divide 3
+        self.assertEqual(parallel_args({"parallel": 6, "gpu": [0, 1, 2]}, []), ["--batch", "6", "--batch-groups", "3"])
+        self.assertEqual(parallel_args({"parallel": 4, "gpu": [0, 1, 2]}, []), ["--batch", "4", "--batch-groups", "2"])
+        self.assertEqual(parallel_args({**two, "batch_groups": 1}, []), ["--batch", "8"])           # off
+        self.assertEqual(parallel_args({**two, "batch_groups": 4}, []), ["--batch", "8", "--batch-groups", "4"])
+        self.assertEqual(parallel_args(two, ["--batch-groups", "4"]), ["--batch", "8"])             # the args' own wins
+        self.assertEqual(parallel_args({"parallel": 12, "gpu": [0, 1]}, []), ["--batch", "12", "--batch-groups", "2"])
         args = engine_args({"args": ["--pack", "p"], "parallel": 2})
         self.assertEqual(args[-2:], ["--batch", "2"])
 
