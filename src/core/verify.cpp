@@ -276,7 +276,7 @@ bool Verifier::release_gpu_waits(int timeout_ms) {
     // the words the spin kernels read (wait_flag_ge, wait_flag_ge_or) are mapped host memory, so a store here
     // reaches them with no API call; UINT32_MAX is past every ring.  (E-6's skip words are device memory, but
     // wait_flag_ge_or also returns on its flag.)  A host function raising flag B later only raises.
-    for (uint32_t* p : {h_flag_, h_flagA_, h_flagB_})
+    for (uint32_t* p : {h_flag_, h_flagA_, h_flagB_, h_go_})
         if (p != nullptr) *(volatile uint32_t*) p = UINT32_MAX;
     std::atomic_thread_fence(std::memory_order_seq_cst);
     _mm_sfence();
@@ -367,6 +367,11 @@ void Verifier::diag(std::FILE* f) const {
 }
 
 Verifier::~Verifier() {
+    if (early_thr_.joinable()) {
+        early_job_.store(-1, std::memory_order_release);
+        early_job_.notify_all();
+        early_thr_.join();
+    }
     const Verifier* self = this;
     g_diag_verifier.compare_exchange_strong(self, nullptr);
     for (auto& slot : g_live) {
@@ -404,7 +409,7 @@ Verifier::~Verifier() {
         if (e) cudaEventDestroy(e);
     if (arena_) cudaFree(arena_);
     void* hosts[] = {h_tok_, h_step_, h_pos_, h_commit_, h_ple_, h_out_, h_x_, h_ids_, h_w_, h_seq_, h_flag_, h_ymiss_,
-                     h_flagA_, h_plan_, h_flagB_, h_plan_err_};
+                     h_flagA_, h_plan_, h_flagB_, h_plan_err_, h_go_};
     for (void* h : hosts)
         if (h) cudaFreeHost(h);
 }
@@ -489,6 +494,7 @@ bool Verifier::init(const WeightTable& wt, const ModelGeometry& g, SessionState&
               mapped(64, (void**) &h_flagA_, (void**) &m_flagA_) &&
               mapped(64, (void**) &h_flagB_, (void**) &m_flagB_) &&
               mapped(64, (void**) &h_plan_err_, (void**) &m_plan_err_) &&
+              mapped(64, (void**) &h_go_, (void**) &m_go_) &&
               mapped(T * K * N * 4, (void**) &h_ymiss_, (void**) &m_ymiss_);
     if (!ok) { err = "verify: mapped staging allocation failed"; return false; }
     // the GPU plan: counts(4) | start(cap+1) | dst(cap) | tok(cap) | pad | ptr(cap u64) | ptr2(cap u64) | start2(cap+1)
@@ -751,6 +757,9 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
     auto slot_ss = [&](int t) -> SessionState& { return batch_rec_ ? *slots_[(size_t) brow_[t]] : ss; };
     const int hrow0 = batch_rec_ ? row_base_ : 0;   // a slot group's own hand-off rows
 
+    // ---- a later stage of a layer split: nothing below may read its inputs or the hand-off before `go` (see
+    // enable_early_launch; `run` raises it before the launch when nothing was launched early)
+    if (lb_ > 0 && !batch_rec_) wait_flag_ge(m_go_, 1, cs);
     // ---- the window's inputs, from mapped staging.  With branches the steps and positions (first read by the first
     // layer's mixer) cross PCIe on side 1 beside the embedding and the first hyper-connection read.
     copy_i32_from_mapped(tok_, m_tok_, T, cs);
@@ -1904,6 +1913,59 @@ void Verifier::accumulate_profile(const unsigned long long* stamps) {
     ++prof_windows_;
 }
 
+void Verifier::enable_early_launch() {
+    if (early_ || lb_ <= 0 || h_go_ == nullptr) return;
+    if (const char* v = std::getenv("STRATA_SPLIT_EARLY_LAUNCH"); v != nullptr && std::atoi(v) == 0) return;
+    early_ = true;
+    early_thr_ = std::thread([this] { early_loop(); });
+}
+
+void Verifier::early_post(int T, const int32_t* tokens, int64_t pos0) {
+    if (!early_ || T < 1 || T > max_t_ || early_job_.load(std::memory_order_acquire) != 0) return;
+    refresh_ar();   // the main thread decides the graph (the residency table), as run would before its launch
+    if (ar_on() && h_plan_err_ != nullptr) *(volatile uint32_t*) h_plan_err_ = 0;
+    early_T_ = T;
+    early_pos0_ = pos0;
+    for (int t = 0; t < T; ++t) early_tok_[t] = tokens[t];
+    early_posted_ = true;
+    early_job_.store(1, std::memory_order_release);
+    early_job_.notify_all();
+}
+
+void Verifier::early_loop() {
+    for (;;) {
+        const int j = early_job_.load(std::memory_order_acquire);
+        if (j < 0) return;
+        if (j != 1) {
+            early_job_.wait(j, std::memory_order_acquire);
+            continue;
+        }
+        std::string e;
+        bool ok;
+        {
+            const OnDevice on_device(device_);
+            ok = capture(early_T_, e) && capture_commit(e);   // thread-local capture mode: safe beside the other stage
+            if (ok) {
+                stage_inputs(early_T_, early_tok_, early_pos0_);
+                *(volatile uint32_t*) h_go_ = 0;   // this stage's previous window has finished (its run synced)
+                std::atomic_thread_fence(std::memory_order_seq_cst);
+                const Clock::time_point tl = Clock::now();
+                const cudaError_t le = cudaGraphLaunch(ar_off_ ? exec_nr_[early_T_] : exec_[early_T_], cs_);
+                ms_launch += ms_since(tl);
+                if (le != cudaSuccess) {
+                    ok = false;
+                    e = std::string("launch: ") + cudaGetErrorString(le);
+                } else {
+                    (void) cudaStreamQuery(cs_);
+                }
+            }
+        }
+        if (!ok) early_err_ = "verify (early launch): " + e;
+        early_job_.store(ok ? 2 : 3, std::memory_order_release);
+        early_job_.notify_all();
+    }
+}
+
 bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool, void* user, int32_t* out,
                    std::string& err) {
     using namespace strata::kernels;
@@ -1914,11 +1976,22 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
     const ModelGeometry& g = *g_;
     SessionState& ss = *ss_;
     if (pos0 + T > ss.qsa_states[ss.qsa_primary()].max_cells) { err = "verify: the window runs past the context"; return false; }
-    refresh_ar();
-    if (!capture(T, err) || !capture_commit(err)) return false;
+    // enable_early_launch: the previous stage posted this window; its worker captured, staged and launched it
+    // (early_post ran refresh_ar on this thread first)
+    const bool pre = early_posted_;
+    early_posted_ = false;
+    if (pre) {
+        int st;
+        while ((st = early_job_.load(std::memory_order_acquire)) == 1) _mm_pause();
+        early_job_.store(0, std::memory_order_relaxed);
+        if (st != 2) { err = early_err_; return false; }
+    } else {
+        refresh_ar();
+        if (!capture(T, err) || !capture_commit(err)) return false;
+    }
     VDBG("captured; staging\n");
     const Clock::time_point t0 = Clock::now();
-    if (!staged_) stage_inputs(T, tokens, pos0);
+    if (!pre && !staged_) stage_inputs(T, tokens, pos0);
     staged_ = false;
     const bool do_ple = ss.ple.ready() && ple_stage();
     uint32_t ple_rows[kVerifyMaxT * PLE_N_HEADS];
@@ -1936,14 +2009,38 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
     trace_ev("WINDOW", -1, -1, pos0 * 16 + T);
     ms_host += ms_since(t0);
     VDBG("staged; launching\n");
-    if (ar_on() && h_plan_err_ != nullptr) *(volatile uint32_t*) h_plan_err_ = 0;
-    const Clock::time_point tl = Clock::now();
-    const cudaError_t le = cudaGraphLaunch(ar_off_ ? exec_nr_[T] : exec_[T], cs_);
-    ms_launch += ms_since(tl);
+    cudaError_t le = cudaSuccess;
+    if (pre) {   // launched by the worker and waiting: the hand-off is complete (the previous stage synced)
+        _mm_sfence();
+        *(volatile uint32_t*) h_go_ = 1;
+    } else {
+        if (h_go_ != nullptr) *(volatile uint32_t*) h_go_ = 1;
+        if (ar_on() && h_plan_err_ != nullptr) *(volatile uint32_t*) h_plan_err_ = 0;
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        const Clock::time_point tl = Clock::now();
+        le = cudaGraphLaunch(ar_off_ ? exec_nr_[T] : exec_[T], cs_);
+        ms_launch += ms_since(tl);
+    }
     trace_ev("LAUNCHED", -1, -1, (int64_t) le);
     if (le != cudaSuccess) { err = std::string("verify: launch: ") + cudaGetErrorString(le); return false; }
-    (void) cudaStreamQuery(cs_);
+    if (!pre) (void) cudaStreamQuery(cs_);
     VDBG("launched\n");
+    // the next stage's window launches now, on its worker, while this stage runs; should this window fail before
+    // it reaches the next stage, the guard raises that graph's `go` so no spin kernel outlives the error (#267)
+    struct GoGuard {
+        Verifier* n = nullptr;
+        ~GoGuard() {
+            if (n == nullptr) return;
+            while (n->early_job_.load(std::memory_order_acquire) == 1) _mm_pause();
+            n->early_job_.store(0, std::memory_order_relaxed);
+            n->early_posted_ = false;
+            *(volatile uint32_t*) n->h_go_ = UINT32_MAX;
+        }
+    } go_guard;
+    if (next_ != nullptr && next_->early_) {
+        next_->early_post(T, tokens, pos0);
+        if (next_->early_posted_) go_guard.n = next_;
+    }
     volatile uint32_t* const seq = h_seq_;
     volatile uint32_t* const flag = h_flag_;
     const int G = groups_[T] > 0 ? groups_[T] : 1;
@@ -2073,6 +2170,7 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
     // the drafts were. Exact: a rejected row's draw is discarded, and no kept decision depends on a reused draw.
     if (le_ < g.n_layers) {   // a layer split's earlier stage: the hand-off is written (synced above)
         ++windows;
+        go_guard.n = nullptr;   // the next stage's run raises its `go`
         return next_ == nullptr || next_->run(T, tokens, pos0, pool, next_user_, out, err);
     }
     const bool sampled = !sampling_.greedy && sampling_.temperature > 0.0f;
