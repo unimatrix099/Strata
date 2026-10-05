@@ -30,6 +30,19 @@ class Parallel(unittest.TestCase):
         self.assertEqual(S.parallel_recommend(32, q2, 262144, "int8", False), 0)      # a 262K KV per slot: no
         self.assertEqual(S.parallel_recommend(32, q2, 262144, "int8", True), 4)       # ... unless it streams
 
+    def test_split_note(self):
+        # several cards: the pipeline note (opt-in, measured), never "one at a time - costs 10-25%"
+        iq3 = S.MODELS["IQ3_XXS"]["arena_gb"]
+        note = S.parallel_note(None, [24, 24], iq3, 131072, "int8", True)
+        self.assertEqual(len(note), 1)
+        self.assertIn("--parallel 8", note[0])
+        self.assertIn("pipeline", note[0])
+        self.assertNotIn("10-25%", note[0])
+        lines = S.parallel_note(8, [24, 24], iq3, 131072, "int8", True)
+        self.assertTrue(any("pipeline" in x for x in lines))
+        self.assertFalse(any("one at a time" in x for x in lines))
+        self.assertIn("10-25%", S.parallel_note(None, [12], iq3, 32768, "int8", False)[0])   # one card: as before
+
     def test_notes_recommend_never_force(self):
         q2 = S.MODELS["Q2_0"]["arena_gb"]
         # 12 GB: left at one, with the reason
