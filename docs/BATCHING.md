@@ -36,7 +36,7 @@ With a layer split, the engine options go into the config's `args`:
 | Option | What it does |
 | --- | --- |
 | `"parallel": N` / `--batch N` / `--slots N` (2..8 normally) | up to N conversations have batch slots; more requests wait for a free slot. Each slot gets its own state (a session carved like the stage's own: GDN recurrence, QSA K/V and indexer, PLE history) on every GPU of the split. With grouped MTP, more than 8 slots can rotate through eight-row windows if memory permits. |
-| `--batch-groups G` | with a layer split: the N slots in G groups that flow through the GPUs as a pipeline (GPU k runs one group while GPU k+1 runs another). G must divide N. 1 = all slots in one window, GPU after GPU. |
+| `--batch-groups G` | with a layer split: the N slots in G groups that flow through the GPUs as a pipeline (GPU k runs one group while GPU k+1 runs another). G must divide N. 1 = all slots in one window, GPU after GPU. Since 2026-10-05 the server adds it to `"parallel"` on several GPUs (the most groups up to the number of GPUs that divides N; `"batch_groups": N` in the config sets it, 1 = off), and a group's step runs only its active slots (`STRATA_BATCH_PAD_ROWS=1`: all of them, as before). |
 | `--trim-stage-weights` | with an **explicit** `--layer-split` (e.g. `12,24,36`, not `auto`): every GPU loads only the dense weights of its own layers instead of the whole model's (the same as `STRATA_STAGE_TRIM=1`, PR #639). The VRAM this frees goes to the expert cache. Useful without `--batch` too. |
 
 The engine never refuses a count it cannot run: it says so in its log and runs what it can - at most 8 slots by
@@ -88,7 +88,8 @@ about 10-25% speed per request on this card". `--parallel N` is honoured as aske
   engine copies its state back (50-60 ms for a short conversation) instead of reading the history again - also for
   a client that drops the reply's thinking from the history (the checkpoint matches up to the new turn). A new
   conversation takes an empty slot, else the one used longest ago.
-- Slots are assigned so that consecutive requests land in different pipeline groups (`--batch-groups`).
+- Slots are assigned so that requests at once land in different pipeline groups (`--batch-groups`): a new request
+  takes a free slot of the group with the fewest running requests (two in one group run one card after the other).
 - A client that disconnects stops its slot (`BSTOP`); the others go on.
 
 ## Exactness
@@ -128,7 +129,10 @@ counter-based draw (Philox(seed, position)).
 - A prompt shorter than one chunk is read in one piece (the slots wait for it); a read gives way only at a chunk
   boundary, and not for pictures.
 - Admissions are one at a time: two new long prompts are read one after the other.
-- `--batch-groups` needs every stage on its own GPU; a pipelined slot is not kept as a conversation cache.
+- `--batch-groups` needs every stage on its own GPU. Since 2026-10-05 a pipelined slot is kept as a conversation
+  cache like any other (its group no longer runs pad rows through idle slots; `STRATA_BATCH_PAD_ROWS=1` brings the
+  pad rows and the old limit back). Each mix of active slots in a group is a graph of its own, captured the first time
+  it runs (up to 15 per group of 4 and stage: a one-time pause of a few hundred ms).
 - The slot sessions take VRAM (above) and, with KV streaming, pinned RAM.
 
 ## Measured
@@ -171,6 +175,21 @@ tok/s, at 0.7 -> 358 tok/s.
 
 `--trim-stage-weights` alone raised the share of experts held in VRAM on that machine from 76-85 % to 84-100 %
 per card.
+
+Two RX 7900 XTX (24 GB each, PCIe 3.0 x8), Ryzen 9 5950X, IQ3_XXS, 128K context, `"parallel": 8` (2 groups of 4),
+through the HTTP server, 512 greedy tokens per answer with thinking on, total tok/s
+(bench/results/2026-10-05-multi-agent-7900xtx):
+
+| Requests at once | One at a time | `"parallel": 8` | Last answer's first token |
+| ---: | ---: | ---: | ---: |
+| 1 | 72.0 | 66-69 | 0.6 s / 0.6 s |
+| 2 | 69.7 | 69.5 | 8.5 s / 1.4 s |
+| 4 | 73.4 | 105.4 | 21.4 s / 2.8 s |
+| 8 | 70.9 | 150.5 | 51.1 s / 5.8 s |
+
+Before the groups' pad rows were dropped, the same slots gave 39.0 / 74.1 / 148.1 tok/s at 2 / 4 / 8 (an idle slot
+cost a token's experts on every card), and without `--batch-groups` 48.7 / 70.0 / 97.0. A request alone is ~5%
+slower (the slots' VRAM comes out of the expert cache: 75% of the experts resident instead of 83%).
 
 ## Together with conversation parking
 
