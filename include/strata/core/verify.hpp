@@ -35,6 +35,7 @@
 #include <map>
 #include <cstdint>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace strata::core {
@@ -124,6 +125,11 @@ public:
     void set_next(Verifier* next, void* next_user) { next_ = next; next_user_ = next_user; }
     /// floats per token in a hand-off buffer
     static int64_t handoff_floats(const ModelGeometry& g) { return (int64_t) g.hc * g.n_embd + g.n_embd + g.hc; }
+    /// LAYER SPLIT, a later stage on its own GPU: launch this stage's window graph from a worker thread while the
+    /// previous stage still runs (the previous stage's `run` posts it); the graph waits on its `go` word before it
+    /// reads its inputs and the hand-off, and `run` only raises that word.  Takes the graph launch (~1.3 ms on a
+    /// 7900 XTX) off the path between the stages.  Call after `init`; STRATA_SPLIT_EARLY_LAUNCH=0 leaves it off.
+    void enable_early_launch();
 
     /// Keep the first `n_keep` (1..T) tokens of the last window; advances `ss.ple_prev` by them.
     bool commit(int n_keep, std::string& err);
@@ -343,6 +349,21 @@ private:
     Verifier* next_ = nullptr;
     void* next_user_ = nullptr;
     bool ple_stage() const { return lb_ <= 1 && 1 < le_; }   ///< holds layer 1, where the PLE block runs
+    // enable_early_launch: the worker posts 2 (launched) or 3 (failed, early_err_) for each job (1); -1 ends it.
+    // A stage that does not start at layer 0 always waits on `go` at the top of its window graph (a word `run`
+    // raises itself when nothing was launched early), so a graph captured before enable_early_launch stays right.
+    uint32_t* h_go_ = nullptr;
+    uint32_t* m_go_ = nullptr;
+    bool early_ = false;
+    bool early_posted_ = false;           ///< the previous stage posted this window's launch (main thread only)
+    std::atomic<int> early_job_{0};
+    int early_T_ = 0;
+    int64_t early_pos0_ = 0;
+    int32_t early_tok_[8] = {};
+    std::string early_err_;
+    std::thread early_thr_;
+    void early_post(int T, const int32_t* tokens, int64_t pos0);   ///< called by the previous stage's run
+    void early_loop();
     void stage_inputs(int T, const int32_t* tokens, int64_t pos0);
     bool staged_ = false;
     bool copy_used_ = false;

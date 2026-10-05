@@ -6088,6 +6088,10 @@ int main(int argc, char** argv) {
                 }
             }
             for (int st = 0; st + 1 < n_stages; ++st) stage_ver(st).set_next(&stage_ver(st + 1), &split_drive);
+            // a later stage on its own GPU launches its window graph while the previous stage runs
+            // (Verifier::enable_early_launch; STRATA_SPLIT_EARLY_LAUNCH=0 leaves it off)
+            if (!split_same)
+                for (int st = 1; st < n_stages; ++st) stage_ver(st).enable_early_launch();
             std::string plan_s = "0-" + std::to_string(split_at[0] - 1) + " (CUDA0)";
             for (int st = 1; st < n_stages; ++st)
                 plan_s += ", " + std::to_string(split_at[(size_t) st - 1]) + "-" + std::to_string(split_drive.end[st] - 1) +
