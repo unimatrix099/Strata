@@ -3769,10 +3769,15 @@ def parallel_note(asked: int | None, vram_gbs, arena_gb: float, ctx: int, kv: st
     rec = parallel_recommend(vram_gbs, arena_gb, ctx, kv, streaming)
     slot = parallel_slot_gb(ctx, kv, streaming)
     split = isinstance(vram_gbs, (list, tuple)) and len(vram_gbs) >= 2
-    if (asked is None or asked <= 1) and split:
+    gpus = len(vram_gbs) if split else 1
+    cache_gb = sum(max(0.0, v - 5) for v in vram_gbs) if split else 0.0
+    fits = [n for n in (8, 6, 4, 2) if n * slot <= PARALLEL_SHARE * cache_gb]   # the slots' share, as for one card
+    def piped(n):   # the server's --batch-groups: the most groups up to the number of GPUs that divides n
+        return max((d for d in range(2, gpus + 1) if n % d == 0), default=1) > 1
+    if (asked is None or asked <= 1) and split and fits and piped(fits[0]):
         # a layer split pipelines the slots through its cards (the server adds --batch-groups): several requests at
         # once then add speed in all, not only less waiting
-        return [f"Several requests at once (opt-in): --parallel 8 runs up to 8 together, flowing through the "
+        return [f"Several requests at once (opt-in): --parallel {fits[0]} runs up to {fits[0]} together, flowing through the "
                 f"{len(vram_gbs)} cards as a pipeline (each takes ~{slot:.1f} GB of VRAM from the expert cache). "
                 "Measured on 2x RX 7900 XTX (IQ3_XXS): 2 / 4 / 8 at once 70 / 105 / 150 tok/s in all against ~71 one "
                 "after the other, the 8th answer starting after 6 s instead of 51 s; a request alone ~5% slower "
@@ -3786,9 +3791,13 @@ def parallel_note(asked: int | None, vram_gbs, arena_gb: float, ctx: int, kv: st
              f"{asked * slot:.1f} GB in all)"]
     if asked > PARALLEL_MAX:
         lines.append(f"the engine runs at most {PARALLEL_MAX} at once; it will use {PARALLEL_MAX}")
-    if split:
-        lines.append(f"on {len(vram_gbs)} cards the slots flow through them as a pipeline (--batch-groups, set by the "
-                     "server)")
+    if split and piped(min(asked, PARALLEL_MAX)):
+        lines.append(f"on {gpus} cards the slots flow through them as a pipeline (--batch-groups, set by the server)")
+    if split and (not fits or asked > fits[0]):
+        lines.append(f"recommended for these cards: at most {fits[0] if fits else 1} - more slots leave fewer experts "
+                     "in VRAM, which can make every request slower; kept as you chose")
+    elif split:
+        pass
     elif not rec:
         lines.append(f"recommended for this card: one at a time - {PARALLEL_COST_NOTE}; kept as you chose")
     elif asked > rec:

@@ -7635,6 +7635,10 @@ int main(int argc, char** argv) {
             int64_t since = 0;              ///< tick it started waiting (fairness)
         };
         std::vector<PGroup> pg((size_t) (piped ? o.batch_groups : 0));
+        // a group's step runs only its active slots: a pad row would cost a token's experts on every stage and write
+        // its slot's state (STRATA_BATCH_PAD_ROWS=1: the whole group, pad rows included, as before)
+        static const bool pad_rows = [] { const char* v = std::getenv("STRATA_BATCH_PAD_ROWS");
+                                          return v != nullptr && std::atoi(v) != 0; }();
         std::vector<int> stage_group((size_t) n_pipe, -1);
         int64_t pipe_tick = 0, rr = 0;
         auto stage_verifier = [&](int k) -> strata::core::Verifier& { return k == 0 ? ver : stages[(size_t) k - 1]->ver; };
@@ -7678,7 +7682,8 @@ int main(int argc, char** argv) {
                         const double ms = std::chrono::duration<double, std::milli>(Clock::now() - sl.t0).count();
                         std::printf("BDONE %d %lld %s %.1f\n", G.rows[t], (long long) sl.produced, fin, ms);
                         sl.active = false;
-                        sl.cached = false;   // the pipeline's pad rows: a pipelined slot is not reused as a cache
+                        // its sessions hold sl.ids for the next turn - unless pad rows write idle slots
+                        sl.cached = !pad_rows && o.prompt_cache > 0 && !sl.img;
                     } else {
                         sl.x = y;
                         sl.p += 1;
@@ -7707,10 +7712,6 @@ int main(int argc, char** argv) {
                     if (pick < 0) continue;
                     rr = pick + 1;
                     PGroup& G = pg[(size_t) pick];
-                    // only the active slots: a pad row would cost a token's experts on every stage and write its
-                    // slot's state (STRATA_BATCH_PAD_ROWS=1: the whole group, pad rows included, as before)
-                    static const bool pad_rows = [] { const char* v = std::getenv("STRATA_BATCH_PAD_ROWS");
-                                                      return v != nullptr && std::atoi(v) != 0; }();
                     G.n = 0;
                     for (int t = 0; t < GS; ++t) {
                         BSlot& sl = bs[(size_t) (pick * GS + t)];

@@ -54,6 +54,7 @@ def main():
     ap.add_argument("--config", required=True)
     ap.add_argument("--max-new", type=int, default=200)
     ap.add_argument("--long", type=int, default=5000, help="tokens of the long prompt C (several prompt chunks)")
+    ap.add_argument("--batch", type=int, default=3, help="slots (4 with --batch-groups 2 in --extra: the pipeline)")
     ap.add_argument("--extra", default="")
     a = ap.parse_args()
     cfg = json.loads(Path(a.config).read_text())
@@ -69,7 +70,7 @@ def main():
     D = chat(body + "\nWhat are the three most important ideas in the text above?")
     E = chat("Describe the life cycle of a star like the Sun.")
     print(f"prompts: A {len(A)}, B {len(B)}, C {len(C)} tokens", flush=True)
-    eng = Engine(a.exe, cfg, 3, {"STRATA_IQ_MT_MIN": "1"}, a.extra.split())
+    eng = Engine(a.exe, cfg, a.batch, {"STRATA_IQ_MT_MIN": "1"}, a.extra.split())
     eng.pending = []
     out = eng.lines()
     ids = lambda v: ",".join(map(str, v))
