@@ -6074,6 +6074,8 @@ int main(int argc, char** argv) {
             int stage = 0;                  ///< the stage it runs on or waits for
             int32_t tok[strata::kernels::kVerifyMaxT] = {};
             int64_t pos[strata::kernels::kVerifyMaxT] = {};
+            int rows[strata::kernels::kVerifyMaxT] = {};   ///< this step's slots: the group's active ones, fixed for
+            int n = 0;                                     ///< every stage of the step (a client may leave meanwhile)
             int64_t since = 0;              ///< tick it started waiting (fairness)
         };
         std::vector<PGroup> pg((size_t) (piped ? o.batch_groups : 0));
@@ -6105,11 +6107,11 @@ int main(int argc, char** argv) {
                 if (k + 1 < n_pipe) { G.stage = k + 1; G.since = pipe_tick; continue; }
                 // the last stage: the group's picks
                 const int32_t* outb = vk.batch_out();
-                for (int t = 0; t < GS; ++t) {
-                    BSlot& sl = bs[(size_t) (gi * GS + t)];
+                for (int t = 0; t < G.n; ++t) {
+                    BSlot& sl = bs[(size_t) G.rows[t]];
                     if (!sl.active) continue;
                     const int32_t y = outb[t];
-                    std::printf("BT %d %d\n", gi * GS + t, (int) y);
+                    std::printf("BT %d %d\n", G.rows[t], (int) y);
                     ++sl.produced;
                     ++bt_rows;
                     const bool eos = std::find(o.eos_ids.begin(), o.eos_ids.end(), (int64_t) y) != o.eos_ids.end();
@@ -6118,7 +6120,7 @@ int main(int argc, char** argv) {
                     sl.ids.push_back(sl.x);
                     if (fin != nullptr) {
                         const double ms = std::chrono::duration<double, std::milli>(Clock::now() - sl.t0).count();
-                        std::printf("BDONE %d %lld %s %.1f\n", gi * GS + t, (long long) sl.produced, fin, ms);
+                        std::printf("BDONE %d %lld %s %.1f\n", G.rows[t], (long long) sl.produced, fin, ms);
                         sl.active = false;
                         sl.cached = false;   // the pipeline's pad rows: a pipelined slot is not reused as a cache
                     } else {
@@ -6149,11 +6151,19 @@ int main(int argc, char** argv) {
                     if (pick < 0) continue;
                     rr = pick + 1;
                     PGroup& G = pg[(size_t) pick];
+                    // only the active slots: a pad row would cost a token's experts on every stage and write its
+                    // slot's state (STRATA_BATCH_PAD_ROWS=1: the whole group, pad rows included, as before)
+                    static const bool pad_rows = [] { const char* v = std::getenv("STRATA_BATCH_PAD_ROWS");
+                                                      return v != nullptr && std::atoi(v) != 0; }();
+                    G.n = 0;
                     for (int t = 0; t < GS; ++t) {
                         BSlot& sl = bs[(size_t) (pick * GS + t)];
-                        G.tok[t] = sl.active ? sl.x : 0;
-                        G.pos[t] = sl.active ? sl.p : 0;
+                        if (!sl.active && !pad_rows) continue;
+                        G.rows[G.n] = pick * GS + t;
+                        G.tok[G.n] = sl.active ? sl.x : 0;
+                        G.pos[G.n] = sl.active ? sl.p : 0;
                         if (!sl.active) sl.cached = false;   // its pad row writes its state
+                        ++G.n;
                     }
                     G.inflight = true;
                     G.stage = 0;
@@ -6162,7 +6172,7 @@ int main(int argc, char** argv) {
                 }
                 PGroup& G = pg[(size_t) pick];
                 strata::core::progress().busy.store(true);
-                if (!stage_verifier(k).batch_launch(pick * GS, GS, G.tok, G.pos, err)) {
+                if (!stage_verifier(k).batch_launch_rows(G.rows, G.n, pick * GS, G.tok, G.pos, err)) {
                     std::printf("ERR %s\n", err.c_str());
                     return false;
                 }
@@ -6178,6 +6188,14 @@ int main(int argc, char** argv) {
                     const std::string pr = stage_verifier(k).profile_report();
                     if (!pr.empty()) std::fprintf(stderr, "strata batch GPU stages, stage %d (ms/window):%s\n", k + 1, pr.c_str());
                 }
+                // STRATA_SPLIT_TIMING: the pump thread's time per stage (cumulative since the start)
+                if (static const bool st_timing = std::getenv("STRATA_SPLIT_TIMING") != nullptr; st_timing)
+                    for (int k = 0; k < n_pipe; ++k) {
+                        const strata::core::Verifier& v = stage_verifier(k);
+                        std::fprintf(stderr, "strata batch (pipelined) stage %d: %lld windows; launch (staging + window + "
+                                             "commit graphs) %.0f ms, pool + plan %.0f ms in all\n", k,
+                                     (long long) v.windows, v.ms_launch, v.ms_pool);
+                    }
                 bt_windows = bt_rows = 0;
                 strata::core::progress().busy.store(false);
             }
