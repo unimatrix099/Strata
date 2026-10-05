@@ -3768,6 +3768,15 @@ def parallel_note(asked: int | None, vram_gbs, arena_gb: float, ctx: int, kv: st
     one), or how the asked count compares with it (kept as asked: recommend, never force)."""
     rec = parallel_recommend(vram_gbs, arena_gb, ctx, kv, streaming)
     slot = parallel_slot_gb(ctx, kv, streaming)
+    split = isinstance(vram_gbs, (list, tuple)) and len(vram_gbs) >= 2
+    if (asked is None or asked <= 1) and split:
+        # a layer split pipelines the slots through its cards (the server adds --batch-groups): several requests at
+        # once then add speed in all, not only less waiting
+        return [f"Several requests at once (opt-in): --parallel 8 runs up to 8 together, flowing through the "
+                f"{len(vram_gbs)} cards as a pipeline (each takes ~{slot:.1f} GB of VRAM from the expert cache). "
+                "Measured on 2x RX 7900 XTX (IQ3_XXS): 2 / 4 / 8 at once 70 / 105 / 150 tok/s in all against ~71 one "
+                "after the other, the 8th answer starting after 6 s instead of 51 s; a request alone ~5% slower "
+                "(docs/BATCHING.md)."]
     if asked is None or asked <= 1:
         if not rec:
             return [f"Several requests at once: left at one at a time - {PARALLEL_COST_NOTE} (docs/BATCHING.md)."]
@@ -3777,7 +3786,10 @@ def parallel_note(asked: int | None, vram_gbs, arena_gb: float, ctx: int, kv: st
              f"{asked * slot:.1f} GB in all)"]
     if asked > PARALLEL_MAX:
         lines.append(f"the engine runs at most {PARALLEL_MAX} at once; it will use {PARALLEL_MAX}")
-    if not rec:
+    if split:
+        lines.append(f"on {len(vram_gbs)} cards the slots flow through them as a pipeline (--batch-groups, set by the "
+                     "server)")
+    elif not rec:
         lines.append(f"recommended for this card: one at a time - {PARALLEL_COST_NOTE}; kept as you chose")
     elif asked > rec:
         lines.append(f"recommended for this card: {rec} - more slots leave fewer experts in VRAM, which can make every "
