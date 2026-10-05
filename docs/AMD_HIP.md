@@ -200,6 +200,35 @@ sizes itself automatically and leaves 1 GiB of VRAM headroom.
 GPU memory to system RAM (GTT), the OOM killer then ends KWin/plasmashell or `systemd-oomd` ends apps, or the
 compositor fails with "Failed to pin framebuffer with error -12".
 
+**Two cards, one of them the desktop's: put that one second (2026-10-05).** Measured on 2x RX 7900 XTX (24 GB each,
+PCIe 3.0 x8, the probe reads 7.1 GB/s), Ryzen 9 5950X (AVX2, no AVX-512), 126 GB RAM, system ROCm 7.9.0 (hipBLASLt
+1.1.0, table `gfx1100-hipblaslt-100100.txt`), engine 0.1.39, IQ3_XXS, 128K context, `--kv int8 --kv-resident 32768`,
+MTP `--spec 4`, temperature 0. HIP device 0 (PCI 0a) drives two monitors. `./setup.sh --gpus all` made it the main
+card (layers 0-25, a 19.3 GiB expert cache), with the default 700 MiB reserve.
+
+- **What went wrong:** the engine's log said everything fit (648 MiB free with everything loaded), but amdgpu moved
+  21.3 GB of that card's memory to GTT (system RAM, read over PCIe). That card showed 100% use at 115-145 W; the
+  other card sat at 0%. Only the driver shows it: `/sys/class/drm/card*/device/mem_info_gtt_used` (21.3 GB on the
+  desktop card, 30 MB on the other) against `mem_info_vram_used` (4.9 GB of the card's 24 GB).
+- **The fix:** `./setup.sh --backend hip --gpus 1,0 --vram-reserve-mib 3072` (the card without a display first, 3 GiB
+  kept free on each). Then GTT held 30 MB and 532 MB (the desktop's own), 2,970 MiB of VRAM stayed free, and 83% of
+  the experts were resident (94% before; the reserve costs cache).
+
+  | the same prompts | 75-78 token prompt | 4,538 token prompt | decode |
+  |---|---|---|---|
+  | `--gpus 0,1`, 700 MiB reserve (memory in GTT) | 12.9-13.8 tok/s | 80.5 tok/s | 14.6-16.4 tok/s |
+  | `--gpus 1,0`, 3072 MiB reserve | 103-150 tok/s | 1,152-1,268 tok/s | 56.1-68.5 tok/s |
+
+  The answers were the same and correct in both (a fact and arithmetic question, an `is_prime` function, a summary
+  of a 4.5K-token document); the Anthropic endpoint and streaming worked. Order and reserve were changed together,
+  so their shares of the gain are not measured apart, and neither run was compared with one card alone.
+- **Build on ROCm 7.9:** its clang (20.0) rejects `__shared__ alignas(16)` ("'alignas' attribute cannot be applied
+  to types"); `iq_kernels.cu` now uses `__shared__ __align__(16)` like the other kernels. ctest on this PC: 61 of 65
+  pass. `ple_parity` needs the Q2_0 fixture, `expert_multi_test` an AVX-512 CPU, `platform_memory_test` a memlock
+  limit the container did not allow, and `hip_q2_zero` gets +0 where -0 is expected (the half-precision Q2_0
+  dequant; a62c1cd keeps the sign only on gfx1012 with HIP < 7). A signed zero does not change a matrix product, and
+  IQ3_XXS does not use that path.
+
 The installer supports this backend (see "Install with setup" above). Images run through the CPU encoder for now (`--vision cpu`).
 Setup installs one AMD card, or several with `--gpus` (the engine's layer split; see RDNA4 below).
 

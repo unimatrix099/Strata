@@ -193,6 +193,10 @@ The Coder on an RTX 5080 + RTX 3090 (Ryzen 9 9950X3D), 32K context; details in
 
 **Which cards and in what order:**
 - Put the fastest card first; auto gives it as many layers as its cache allows.
+- With cards of the same speed, put the one that drives the desktop last, and keep VRAM free with
+  `--vram-reserve-mib 3072`. On 2x RX 7900 XTX, the desktop card first with the default reserve left 21 GB of its
+  memory in system RAM: 80 instead of 1,152-1,268 tok/s on a 4.5K prompt, and 15 instead of 56-68 tok/s decode
+  ([AMD_HIP.md](AMD_HIP.md#model-and-serving-configuration), "Two cards, one of them the desktop's").
 - Leave out a much slower card when two already hold the model. An RTX 2080 Ti as a third card made the 5080 +
   3090 pair slower (68 / 90 tok/s decode): every extra card costs its own round per window.
 - More cards pay off when the model's routed experts do not fit the faster ones.
