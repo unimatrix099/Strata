@@ -2551,7 +2551,10 @@ int main(int argc, char** argv) {
             }
         }
     }
-    strata::core::Verifier::set_commit_async(!multi_gpu);   // see Verifier::set_commit_async
+    // A layer split commits asynchronously too since every point that touches a session waits on the stages' commit
+    // events (wait_commit, a454dbb) instead of one device's sync; STRATA_SPLIT_COMMIT_SYNC=1 keeps the old wait
+    // (2x RX 7900 XTX: bench/results/2026-10-05-split-decode-7900xtx)
+    strata::core::Verifier::set_commit_async(!multi_gpu || std::getenv("STRATA_SPLIT_COMMIT_SYNC") == nullptr);
     // ---- layer split across GPUs: each later stage's own copy of the dense weights, its session and (the last) the
     // head, made on its device before the host arena is mapped (as the drafter below, for the same WDDM reason)
     std::vector<std::unique_ptr<GpuStage>> stages;
@@ -7431,8 +7434,10 @@ int main(int argc, char** argv) {
                     const strata::core::Verifier& v = stage_ver(st);
                     const double w = v.windows > 0 ? (double) v.windows : 1.0;
                     std::fprintf(stderr, "strata serve: stage %d: %lld windows; per window: wait for the GPU %.3f ms, "
-                                         "pool + plan %.3f ms, host staging %.3f ms, commit %.3f ms\n", st,
-                                 (long long) v.windows, v.ms_wait / w, v.ms_pool / w, v.ms_host / w, v.ms_commit / w);
+                                         "pool + plan %.3f ms, host staging %.3f ms, commit %.3f ms, graph launch %.3f ms, "
+                                         "final sync %.3f ms\n", st,
+                                 (long long) v.windows, v.ms_wait / w, v.ms_pool / w, v.ms_host / w, v.ms_commit / w,
+                                 v.ms_launch / w, v.ms_sync / w);
                 }
             if (g.n_qsa_layers() > 0 && ss.qsa_states[ss.qsa_primary()].kv_mode == 1) {
                 // KV streaming, cumulative over the process: blocks the selections named vs blocks read from RAM
