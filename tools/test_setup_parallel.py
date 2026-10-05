@@ -42,6 +42,11 @@ class Parallel(unittest.TestCase):
         self.assertTrue(any("pipeline" in x for x in lines))
         self.assertFalse(any("one at a time" in x for x in lines))
         self.assertIn("10-25%", S.parallel_note(None, [12], iq3, 32768, "int8", False)[0])   # one card: as before
+        # the slots must fit: 262K without KV streaming (3.5 GB a slot) -> at most 2 on 2x 24 GB
+        self.assertIn("--parallel 2", S.parallel_note(None, [24, 24], iq3, 262144, "int8", False)[0])
+        self.assertTrue(any("at most 2" in x for x in S.parallel_note(8, [24, 24], iq3, 262144, "int8", False)))
+        # 3 slots on 2 cards: no groups, so no pipeline promised
+        self.assertFalse(any("pipeline" in x for x in S.parallel_note(3, [24, 24], iq3, 131072, "int8", True)))
 
     def test_notes_recommend_never_force(self):
         q2 = S.MODELS["Q2_0"]["arena_gb"]

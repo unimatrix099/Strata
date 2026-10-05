@@ -1524,6 +1524,9 @@ def batch_groups_args(cfg: dict, args: list[str], n: int) -> list[str]:
     asked = cfg.get("batch_groups")
     if isinstance(asked, int) and not isinstance(asked, bool):
         return ["--batch-groups", str(asked)] if asked > 1 else []
+    if asked is not None:
+        print(f'[strata] "batch_groups" must be a whole number (1 = off), not {asked!r}: the automatic choice is used',
+              flush=True)
     g = max((d for d in range(2, gpus + 1) if n % d == 0), default=1)
     return ["--batch-groups", str(g)] if g > 1 else []
 

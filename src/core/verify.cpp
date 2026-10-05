@@ -2202,8 +2202,8 @@ bool Verifier::batch_launch_rows(const int* rows, int S, int base, const int32_t
                                  std::string& err) {
     const OnDevice on_device(device_);
     if (b_running_) { err = "verify: batch_launch while this stage is busy"; return false; }
+    if (!stage_batch(rows, S, base, tokens, pos, err)) return false;   // captures a new mix of slots once
     const Clock::time_point tl = Clock::now();
-    if (!stage_batch(rows, S, base, tokens, pos, err)) return false;
     cudaError_t le = cudaGraphLaunch(exec_bm_[batch_key(rows, S, base)], cs_);
     if (le == cudaSuccess) le = cudaGraphLaunch(commit_bm_[batch_key(rows, S, base)], cs_);   // right behind it: every row is kept
     ms_launch += ms_since(tl);
