@@ -497,6 +497,7 @@ class StrataEngine:
         gs = self.batch // groups if self.batch else 0
         # slots in the order that spreads requests over the pipeline's groups first: 0, gs, 2gs, .., 1, gs+1, ..
         self.slot_order = [g * gs + t for t in range(gs) for g in range(groups)]
+        self.slot_gs = gs or 1   # slots per pipeline group (all of them without --batch-groups)
         self.slot_q = [queue.Queue() for _ in range(self.batch)]
         self.slot_busy = [False] * self.batch
         # what each slot's sessions hold (prompt + every token a window fed), so a conversation's next turn goes to
@@ -1090,7 +1091,14 @@ class StrataEngine:
         best = max(free, key=held_prefix)
         if held_prefix(best) > 0:
             return best
-        return min(free, key=lambda b: (bool(self.slot_held[b]), self.slot_used[b]))
+        # with --batch-groups: the group with the fewest running requests first, so requests at once share the
+        # pipeline's cards (two in one group run one card after the other: 2x RX 7900 XTX, --batch 8, 2 requests
+        # 26-27 tok/s each against 37-39 in two groups); without groups every slot is in one group
+        gs = getattr(self, "slot_gs", 0) or len(self.slot_busy) or 1
+        def group_load(b):
+            g = b // gs
+            return sum(1 for x in range(g * gs, min((g + 1) * gs, len(self.slot_busy))) if self.slot_busy[x])
+        return min(free, key=lambda b: (group_load(b), bool(self.slot_held[b]), self.slot_used[b]))
 
     def slots_view(self) -> list[dict]:
         """/metrics: each batch slot - idle (with the tokens it holds for a next turn), reading or decoding."""
@@ -1500,7 +1508,24 @@ def parallel_args(cfg: dict, args: list[str]) -> list[str]:
     if n > PARALLEL_MAX:
         print(f'[strata] "parallel": {n} - the engine runs at most {PARALLEL_MAX} requests together; it will use '
               f"{PARALLEL_MAX}", flush=True)
-    return ["--batch", str(n)]
+    return ["--batch", str(n)] + batch_groups_args(cfg, args, min(n, PARALLEL_MAX))
+
+
+def batch_groups_args(cfg: dict, args: list[str], n: int) -> list[str]:
+    """With a layer split across several GPUs, "parallel" slots also flow through the cards as a pipeline
+    (--batch-groups G: GPU k runs one group while GPU k+1 runs another) instead of all of them in one window, card
+    after card: G = the most groups up to the number of GPUs that divides the slots.  Measured on 2x RX 7900 XTX
+    (IQ3_XXS, --batch 8, bench/results/2026-10-05-multi-agent-7900xtx): 2 / 4 / 8 clients at once 48.7 / 70.0 / 97.0
+    tok/s in all without groups, 70.9 / 104.6 / 150.0 with 2.  "batch_groups": N in the config sets it (1 = off);
+    an explicit --batch-groups in "args" wins.  One GPU: nothing."""
+    gpus = len(gpu_list(cfg))
+    if gpus < 2 or "--batch-groups" in args:
+        return []
+    asked = cfg.get("batch_groups")
+    if isinstance(asked, int) and not isinstance(asked, bool):
+        return ["--batch-groups", str(asked)] if asked > 1 else []
+    g = max((d for d in range(2, gpus + 1) if n % d == 0), default=1)
+    return ["--batch-groups", str(g)] if g > 1 else []
 
 
 def profile_shape(path: str) -> tuple[int, int] | None:
