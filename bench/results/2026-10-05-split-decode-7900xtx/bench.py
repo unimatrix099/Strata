@@ -34,6 +34,9 @@ def main():
     ap.add_argument("--env", action="append", default=[])
     ap.add_argument("--arg", action="append", default=[], help="extra engine argument (repeat for each token)")
     ap.add_argument("--drop-arg", action="append", default=[], help="remove this engine flag (and its value)")
+    ap.add_argument("--layer-split", default=None, help="the config's layer_split (\"auto\", \"20\", ...)")
+    ap.add_argument("--prefill", action="store_true", help="measure prompt reading instead: a ~4.6K-token prompt "
+                    "(docs/AMD_HIP.md), made unique per rep so no prompt cache is reused, 1 token generated")
     ap.add_argument("--reps", type=int, default=3)
     ap.add_argument("--exe", default=None, help="run this instead of the config's engine (e.g. a profiler wrapper)")
     ap.add_argument("--tokens", type=int, default=512)
@@ -61,6 +64,8 @@ def main():
                 cfg["args"].remove("--remote-expert-opt")
         else:
             cfg["gpu"] = g
+    if a.layer_split is not None:
+        cfg["layer_split"] = a.layer_split
     cfg["env"] = {**cfg.get("env", {}), **dict(e.split("=", 1) for e in a.env)}
     os.makedirs(os.path.dirname(a.out), exist_ok=True)
     logdir = os.path.join(os.path.dirname(a.out), "logs")
@@ -90,7 +95,22 @@ def main():
         res["start_s"] = round(time.time() - t0, 1)
         post(a.port, {"messages": [{"role": "user", "content": "Say hi."}], "max_tokens": 32, "temperature": 0})
         runs = []
-        for rep in range(a.reps):
+        if a.prefill:
+            doc = open(os.path.join(ROOT, "docs", "AMD_HIP.md")).read()[:15000]
+            for rep in range(a.reps):
+                r = post(a.port, {"messages": [{"role": "user", "content": f"Run {rep} {time.time()}. Summarize:\n\n"
+                                  + doc}], "max_tokens": 1, "temperature": 0})
+                t = r["timings"]
+                runs.append({"prompt": "prefill", "rep": rep, "tok_s": t["prompt_per_second"], "n": t["prompt_n"],
+                             "draft": None, "acc": None, "sha": "-", "head": ""})
+            res["runs"] = runs
+            res["prefill"] = statistics.median(x["tok_s"] for x in runs)
+            res["median"] = res["prefill"]
+            res["shas"] = []
+            return_early = True
+        else:
+            return_early = False
+        for rep in range(0 if return_early else a.reps):
             for name, text in PROMPTS.items():
                 r = post(a.port, {"messages": [{"role": "user", "content": text}], "max_tokens": a.tokens,
                                   "temperature": 0})
@@ -101,10 +121,12 @@ def main():
                              "draft": t.get("draft_n"), "acc": t.get("draft_n_accepted"),
                              "sha": hashlib.sha1(content.encode()).hexdigest()[:10], "head": content[:60]})
         res["runs"] = runs
-        for name in PROMPTS:
+        for name in ([] if return_early else PROMPTS):
             res[name] = statistics.median(x["tok_s"] for x in runs if x["prompt"] == name)
-        res["median"] = statistics.median(x["tok_s"] for x in runs)
-        res["shas"] = sorted({f'{x["prompt"]}:{x["sha"]}' for x in runs})
+        if not return_early:
+            res["median"] = statistics.median(x["tok_s"] for x in runs)
+        if not return_early:
+            res["shas"] = sorted({f'{x["prompt"]}:{x["sha"]}' for x in runs})
     except Exception as e:
         res["error"] = str(e)
     finally:

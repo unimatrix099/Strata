@@ -222,6 +222,11 @@ card (layers 0-25, a 19.3 GiB expert cache), with the default 700 MiB reserve.
   The answers were the same and correct in both (a fact and arithmetic question, an `is_prime` function, a summary
   of a 4.5K-token document); the Anthropic endpoint and streaming worked. Order and reserve were changed together,
   so their shares of the gain are not measured apart, and neither run was compared with one card alone.
+- **Later the same day** (bench/results/2026-10-05-split-decode-7900xtx): with the 3 GB reserve, either card order
+  decodes the same (72.2 tok/s with the desktop card second, 74.5 first), so the reserve was the fix. One card alone
+  decodes 59.3-60.1 tok/s; the split was slower than that (55.0) until two changes to its hand-off (the commit no
+  longer waits, and the later stage's window graph launches early) took it to **72.2 tok/s**, the same tokens.
+  Prompts unchanged (1,241-1,246 tok/s on ~4.6K tokens). See [MULTI_GPU.md](MULTI_GPU.md#decode-on-a-split-the-stages-hand-off).
 - **Build on ROCm 7.9:** its clang (20.0) rejects `__shared__ alignas(16)` ("'alignas' attribute cannot be applied
   to types"); `iq_kernels.cu` now uses `__shared__ __align__(16)` like the other kernels. ctest on this PC: 61 of 65
   pass. `ple_parity` needs the Q2_0 fixture, `expert_multi_test` an AVX-512 CPU, `platform_memory_test` a memlock
