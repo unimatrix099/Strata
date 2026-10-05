@@ -89,7 +89,8 @@ about 10-25% speed per request on this card". `--parallel N` is honoured as aske
   engine copies its state back (50-60 ms for a short conversation) instead of reading the history again - also for
   a client that drops the reply's thinking from the history (the checkpoint matches up to the new turn). A new
   conversation takes an empty slot, else the one used longest ago.
-- Slots are assigned so that consecutive requests land in different pipeline groups (`--batch-groups`).
+- Slots are assigned so that requests at once land in different pipeline groups (`--batch-groups`): a new request
+  takes a free slot of the group with the fewest running requests (two in one group run one card after the other).
 - A client that disconnects stops its slot (`BSTOP`); the others go on.
 
 ## Exactness
@@ -172,6 +173,21 @@ tok/s, at 0.7 -> 358 tok/s.
 
 `--trim-stage-weights` alone raised the share of experts held in VRAM on that machine from 76-85 % to 84-100 %
 per card.
+
+Two RX 7900 XTX (24 GB each, PCIe 3.0 x8), Ryzen 9 5950X, IQ3_XXS, 128K context, `"parallel": 8` (2 groups of 4),
+through the HTTP server, 512 greedy tokens per answer with thinking on, total tok/s
+(bench/results/2026-10-05-multi-agent-7900xtx):
+
+| Requests at once | One at a time | `"parallel": 8` | Last answer's first token |
+| ---: | ---: | ---: | ---: |
+| 1 | 72.0 | 66-69 | 0.6 s / 0.6 s |
+| 2 | 69.7 | 69.5 | 8.5 s / 1.4 s |
+| 4 | 73.4 | 105.4 | 21.4 s / 2.8 s |
+| 8 | 70.9 | 150.5 | 51.1 s / 5.8 s |
+
+Before the groups' pad rows were dropped, the same slots gave 39.0 / 74.1 / 148.1 tok/s at 2 / 4 / 8 (an idle slot
+cost a token's experts on every card), and without `--batch-groups` 48.7 / 70.0 / 97.0. A request alone is ~5%
+slower (the slots' VRAM comes out of the expert cache: 75% of the experts resident instead of 83%).
 
 ## Together with conversation parking
 
