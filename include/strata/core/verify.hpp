@@ -385,6 +385,7 @@ private:
     std::thread early_thr_;
     void early_post(int T, const int32_t* tokens, int64_t pos0);   ///< called by the previous stage's run
     void early_loop();
+    void raise_waits();   ///< every word this stage's spin kernels wait on to UINT32_MAX (release_gpu_waits, guards)
     void stage_inputs(int T, const int32_t* tokens, int64_t pos0);
     bool staged_ = false;
     bool copy_used_ = false;
