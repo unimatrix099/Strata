@@ -229,9 +229,7 @@ const int64_t g_test_stall = [] {
 }();
 }  // namespace
 
-bool Verifier::release_gpu_waits(int timeout_ms) {
-    released_.store(true);
-    trace_ev("RELEASE", -1, -1, timeout_ms);
+void Verifier::raise_waits() {
     // the words the spin kernels read (wait_flag_ge, wait_flag_ge_or) are mapped host memory, so a store here
     // reaches them with no API call; UINT32_MAX is past every ring.  (E-6's skip words are device memory, but
     // wait_flag_ge_or also returns on its flag.)  A host function raising flag B later only raises.
@@ -239,8 +237,16 @@ bool Verifier::release_gpu_waits(int timeout_ms) {
         if (p != nullptr) *(volatile uint32_t*) p = UINT32_MAX;
     std::atomic_thread_fence(std::memory_order_seq_cst);
     _mm_sfence();
-    const OnDevice on_device(device_);
+}
+
+bool Verifier::release_gpu_waits(int timeout_ms) {
+    released_.store(true);   // seq_cst: an early-launch job that has not launched yet sees it and launches nothing
+    trace_ev("RELEASE", -1, -1, timeout_ms);
     const Clock::time_point t0 = Clock::now();
+    // a job in flight (enable_early_launch) resets the words before its launch: raise them after it
+    while (early_job_.load(std::memory_order_acquire) == 1 && ms_since(t0) < timeout_ms) std::this_thread::yield();
+    raise_waits();
+    const OnDevice on_device(device_);
     for (cudaStream_t s : {cs_, copy_}) {
         if (s == nullptr) continue;
         while (cudaStreamQuery(s) == cudaErrorNotReady) {
@@ -1713,14 +1719,20 @@ void Verifier::early_loop() {
             continue;
         }
         std::string e;
-        bool ok;
-        {
+        bool ok = false;
+        try {
             const OnDevice on_device(device_);
             ok = capture(early_T_, e) && capture_commit(e);   // thread-local capture mode: safe beside the other stage
             if (ok) {
                 stage_inputs(early_T_, early_tok_, early_pos0_);
                 *(volatile uint32_t*) h_go_ = 0;   // this stage's previous window has finished (its run synced)
                 std::atomic_thread_fence(std::memory_order_seq_cst);
+                if (released_.load()) {   // release_gpu_waits ran: launch nothing it could not reach
+                    ok = false;
+                    e = "released (#267)";
+                }
+            }
+            if (ok) {
                 const Clock::time_point tl = Clock::now();
                 const cudaError_t le = cudaGraphLaunch(ar_off_ ? exec_nr_[early_T_] : exec_[early_T_], cs_);
                 ms_launch += ms_since(tl);
@@ -1731,6 +1743,12 @@ void Verifier::early_loop() {
                     (void) cudaStreamQuery(cs_);
                 }
             }
+        } catch (const std::exception& x) {
+            ok = false;
+            e = x.what();
+        } catch (...) {
+            ok = false;
+            e = "an exception";
         }
         if (!ok) early_err_ = "verify (early launch): " + e;
         early_job_.store(ok ? 2 : 3, std::memory_order_release);
@@ -1743,20 +1761,28 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
     using namespace strata::kernels;
     const OnDevice on_device(device_);
     last_batch_ = false;
-    if (T < 1 || T > max_t_) { err = "verify: window size out of range"; return false; }
-    if (released_.load()) { err = "verify: an earlier window never finished on the GPU (#267); restart the engine"; return false; }
-    const ModelGeometry& g = *g_;
-    SessionState& ss = *ss_;
-    if (pos0 + T > ss.qsa_states[ss.qsa_primary()].max_cells) { err = "verify: the window runs past the context"; return false; }
     // enable_early_launch: the previous stage posted this window; its worker captured, staged and launched it
-    // (early_post ran refresh_ar on this thread first)
+    // (early_post ran refresh_ar on this thread first).  Taken first, so that no return below leaves the job's state
+    // behind; a graph launched early is released on them.
     const bool pre = early_posted_;
     early_posted_ = false;
+    int pre_st = 0;
     if (pre) {
-        int st;
-        while ((st = early_job_.load(std::memory_order_acquire)) == 1) _mm_pause();
+        while ((pre_st = early_job_.load(std::memory_order_acquire)) == 1) _mm_pause();
         early_job_.store(0, std::memory_order_relaxed);
-        if (st != 2) { err = early_err_; return false; }
+    }
+    auto fail = [&](const std::string& e) {
+        if (pre && pre_st == 2) raise_waits();
+        err = e;
+        return false;
+    };
+    if (T < 1 || T > max_t_) return fail("verify: window size out of range");
+    if (released_.load()) return fail("verify: an earlier window never finished on the GPU (#267); restart the engine");
+    const ModelGeometry& g = *g_;
+    SessionState& ss = *ss_;
+    if (pos0 + T > ss.qsa_states[ss.qsa_primary()].max_cells) return fail("verify: the window runs past the context");
+    if (pre) {
+        if (pre_st != 2) { err = early_err_; return false; }
     } else {
         refresh_ar();
         if (!capture(T, err) || !capture_commit(err)) return false;
@@ -1804,9 +1830,10 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
         ~GoGuard() {
             if (n == nullptr) return;
             while (n->early_job_.load(std::memory_order_acquire) == 1) _mm_pause();
+            const bool launched = n->early_job_.load(std::memory_order_acquire) == 2;
             n->early_job_.store(0, std::memory_order_relaxed);
             n->early_posted_ = false;
-            *(volatile uint32_t*) n->h_go_ = UINT32_MAX;
+            if (launched) n->raise_waits();   // go AND the layer flags: the graph runs through and ends (#267)
         }
     } go_guard;
     if (next_ != nullptr && next_->early_) {
