@@ -3121,6 +3121,10 @@ bool Verifier::pl_launch(int T, const int32_t* tokens, int64_t pos0, std::string
     std::atomic_thread_fence(std::memory_order_seq_cst);
     trace_ev("WINDOW (pipelined)", -1, -1, pos0 * 16 + T);
     ms_host += ms_since(t0);
+    if (h_go_ != nullptr) {   // a later stage's graph waits on `go` (enable_early_launch); the pipeline orders it itself
+        *(volatile uint32_t*) h_go_ = 1;
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+    }
     const cudaError_t le = cudaGraphLaunch(exec_[T], cs_);
     trace_ev("LAUNCHED", -1, -1, (int64_t) le);
     if (le != cudaSuccess) { err = std::string("verify: launch: ") + cudaGetErrorString(le); return false; }
