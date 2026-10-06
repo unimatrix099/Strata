@@ -1245,6 +1245,11 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         const int32_t* p_start2 = pl + ptr_off + 4 * capx;
         float* hit_out = hit_out_ + (size_t) tb * K * N;
         float* parts_out = parts_ + (size_t) tb * K * N;
+        // the doorbell path's CPU rows, GPU rows and combine as one kernel (bit for bit the three; not for the
+        // resident or device-planned paths, the helper's reduced rows, or the per-token combine)
+        static const bool gather_env = [] { const char* v = std::getenv("STRATA_COMBINE_GATHER"); return v == nullptr || std::atoi(v) != 0; }();
+        const bool gather = gather_env && !all_resident_ && !device_plan_ && !remote_opt_ && dec_batch &&
+                            native_moe_combine_enabled();
         const auto& lay = strata::kernels::cpu::expert_layout();
         // plan v0.3 P6: the VRAM groups now; the PCIe groups once the copy engine has landed them in staging.
         // `gy`: the native launch's groups side by side (0: cap, one block row per possible group).
@@ -1288,7 +1293,10 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
             // pcie_frac 0), so its launch is kPcieGroupRows block rows striding over the groups, not cap of them
             grouped(p_ptr2, p_start2, p_counts + 2, kPcieGroupRows, hit_out);
             stamp(l, 22, grp);
-            if (device_plan_) {   // no CPU share when the device planned the group: its rows are zeros
+            if (gather) {   // the combine below reads the CPU's rows where they are (combine_gather)
+                wait_flag_ge(m_flag_, ring, cs);
+                stamp(l, 23, grp);
+            } else if (device_plan_) {   // no CPU share when the device planned the group: its rows are zeros
                 wait_flag_ge_or(m_flag_, ring, skip_ + grp, cs);
                 copy_or_zero_from_mapped(parts_out, m_ymiss_ + (size_t) tb * K * N, (long long) n * K * N,
                                          skip_ + grp, ring, cs);
@@ -1303,7 +1311,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 else
                     copy_from_mapped(parts_out, m_ymiss_ + (size_t) tb * K * N, (int64_t) n * K * N, cs);
             }
-            moe_hit_add(parts_out, hit_out, p_dst, p_counts + 1, cap, N, cs);
+            if (!gather) moe_hit_add(parts_out, hit_out, p_dst, p_counts + 1, cap, N, cs);
         }
         // Same condition as `sh_fork` above, which is per group and out of scope here: wait only when the fork
         // actually ran (a wait on an event never recorded is a no-op, but saying it outright reads better).
@@ -1315,7 +1323,12 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 native_moe_combine_multi_hits_gated(parts_out, w_ + tb * K, shared_ + tb * N, sh_g_ + tb, bo_ + tb * N, N, K, n, cs);
             } catch (const std::exception& e) { err = "verify combine: " + std::string(e.what()); return false; }
         } else
-        if (dec_batch && n > 1 && native_moe_combine_enabled()) {   // one launch for the window's rows
+        if (gather) {   // the CPU's rows, the GPU's and the combine in one launch (STRATA_COMBINE_GATHER=0: three)
+            try {
+                native_moe_combine_gather_multi(m_ymiss_ + (size_t) tb * K * N, hit_out, p_dst, p_counts + 1, w_ + tb * K,
+                                                shared_ + tb * N, bo_ + tb * N, N, K, n, cs);
+            } catch (const std::exception& e) { err = "verify combine (gather): " + std::string(e.what()); return false; }
+        } else if (dec_batch && n > 1 && native_moe_combine_enabled()) {   // one launch for the window's rows
             try {
                 native_moe_combine_multi(parts_ + (size_t) tb * K * N, w_ + tb * K, shared_ + tb * N, bo_ + tb * N, N, K, n, cs);
             } catch (const std::exception& e) { err = "verify combine: " + std::string(e.what()); return false; }
