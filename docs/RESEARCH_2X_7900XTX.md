@@ -90,13 +90,17 @@ cards so that neither waits. What the profile says (`STRATA_VERIFY_PROFILE=1`, 4
   run on AMD but are slower than the layer split (72.9 tok/s): the peer tier (`--peer-device`) 67.2, the helper cache
   (`--expert-cache-device1`) 53.8-59.3 (and 18.6 with `auto`, which filled the desktop card). Both meet at every layer
   through the host: 8.6-10.5 ms of every window. The cards themselves meet in 2.8-11.7 us when they signal each other
-  directly (a 4-64 KB block into the other card's VRAM), ~0.6 ms per window for 48 layers - so expert parallelism
-  without the host at each layer (estimated ~85-95 tok/s) is the design to build; a tensor split's bound from a kernel
-  trace is +15-40%.
+  directly (a 4-64 KB block into the other card's VRAM), ~0.6 ms per window for 48 layers. But measured before
+  building it, the peer tier signalled card to card would reach only ~69-78 tok/s: the main card's own work per
+  window (attention, recurrent state, projections, router, shared expert, head) is ~21 ms, the same as the split's
+  two cards in turn, and the experts it hands off are ~2-3 ms of it. Not worth building. A tensor split's bound from
+  a kernel trace is +15-40% (weeks of work); fusing the ~2,400 small kernels of a window helps one card and the split
+  alike.
 
 So for one conversation the cards take turns today, and the work went into making the turns shorter (section 2);
-with several conversations both cards work at the same time (section 3); and the measured path to both cards on one
-token is expert parallelism signalled card to card.
+with several conversations both cards work at the same time (section 3). Expert parallelism does not beat the split
+for one conversation on this model, even signalled card to card, because the experts are a small part of a token's
+work; only a tensor split (weeks, +15-40% estimated) would put both cards on every part of it.
 
 ## 5. Next steps, not done
 
