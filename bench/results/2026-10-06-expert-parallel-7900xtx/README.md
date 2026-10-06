@@ -75,14 +75,35 @@ estimate, not a measurement. It would take a new engine mode: every weight split
 partial outputs and an exchange after every attention and expert block, the KV cache and recurrent state split by
 heads, the prompt path too.
 
+## The direct peer tier, measured before building it
+
+Would the peer tier be fast with the host out of each layer? `STRATA_VERIFY_PROFILE=1` (card A's GPU stages, three
+requests) and `peer_bound.py` on a kernel trace of both cards (128 windows):
+
+| per decode window | card A (main) | card B (peer) |
+|---|---|---|
+| its own work | 21.0-23.1 ms (profile), 20.9 ms in 2,403 kernels (trace) | 4.67 ms of experts (301 kernels) |
+| of which the routed experts it holds ("VRAM hits") | 2.4-2.8 ms (~55 us a layer) | all of it (~97 us a layer) |
+| waiting for the host or card B (waitA + waitB + waitCPU) | 4.7-6.8 ms | - |
+
+Card A does everything of a layer except the experts card B holds - attention or the recurrent state, the
+projections, the hyper-connection reads, the router, the shared expert, the head - and that is ~21 ms per window,
+the same as the layer split's two cards in turn (12.1 + 9.0 ms). Moving experts to card B moved only ~2-3 ms of it.
+With the cards signalling each other directly, the waits shrink but do not vanish: card B's share takes ~97 us a
+layer against card A's own experts' ~55 us, so card A still waits ~1-2.5 ms per window. Window: 21-23 ms of card A +
+1-2.5 ms + the launch (~1.5) + the draft (2.9) + the commit (0.1) = ~26.5-30 ms; at the peer tier's 2.0-2.08 tokens
+per window **~69-78 tok/s, against the layer split's 72.9** - the same within the estimate's width. Not worth
+building: in this model the experts are not the bulk of a token's work.
+
 ## What would pay off most
 
 | idea | estimate | work |
 |---|---|---|
-| the peer tier without the host at each layer: the main card plans the peer's share on the GPU, writes the activations and the plan into the peer's memory and raises a flag; a graph on the peer waits for it, computes, writes its rows back and raises a flag the main card waits on | the 8.6 ms of host per window -> ~0.6 ms of exchanges: ~22-24 ms windows, ~85-95 tok/s (vs 72.9) | days: a device-side plan for the peer, a peer graph per window, flags in uncached VRAM, the CPU's experts (the rest) unchanged |
-| a tensor split | +15-40% | weeks |
+| the peer tier without the host at each layer (the main card plans the peer's share on the GPU and the cards signal each other through flags in each other's VRAM) | first estimated ~85-95 tok/s, counting all 8.6 ms of host time as overhead; measured above: ~69-78 tok/s, the layer split's speed | days - not worth it |
+| a tensor split (every matrix in half, an exchange after each attention and expert block) | +15-40% (13.5-15.1 instead of 23.2 ms of kernels per window, ~0.7 ms of exchanges, ~3 ms more launch gaps) | weeks |
+| fewer, larger kernels (fusing the ~2,400 small kernels of a window; two thirds run under 8 us) | helps one card and the split alike; on this PC llama.cpp's generation fusions gave +6% (2,142 -> 1,661 kernels per token) | per fusion, hours to days |
 
-Both are estimates from the measurements above; neither is built.
+Estimates from the measurements above; none is built.
 
 ## Reproduce
 
