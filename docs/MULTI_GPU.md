@@ -303,6 +303,9 @@ one GPU:
 The tokens are the same (fresh-start greedy answers bit-identical). `STRATA_SPLIT_TIMING=1` prints per stage and
 window the wait for the GPU, the pool, the commit, the graph launch and the final sync.
 
+All the measurements on 2x RX 7900 XTX, and why one conversation's experts are not split across the cards:
+[RESEARCH_2X_7900XTX.md](RESEARCH_2X_7900XTX.md).
+
 ## Several conversations at once
 
 With a layer split, `--batch N --batch-groups G --trim-stage-weights` decodes several conversations together and
