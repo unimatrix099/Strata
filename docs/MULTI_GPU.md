@@ -246,6 +246,10 @@ Two cards, exactly two stages, `--serve`. In the config:
   72.4 -> 84.0 (+16%). It pays when the windows are GPU-bound: with the experts read through the OS file cache
   (`--mmap-experts` on that 32 GB PC) the file reads dominate and it measured no faster.
 
+- **Measured on 2x RX 7900 XTX** (IQ3_XXS, 128K context, int8 KV, layers 0-25 + 26-47, greedy, a story and a code
+  prompt x3; bench/results/2026-10-07-upstream-port-7900xtx): 73.9 -> 92.7 tok/s (+25%), 27.85 -> 23.09 ms per
+  window; 43% of the guessed windows were right (14.6 ms each), and the rolled-back ones cost nothing measurable.
+
 The `STRATA_PIPELINE_*` tuning and test variables (THETA, FORCE_MISS, SWITCH, LOG, TRACE and the like) are read only with
 `STRATA_PIPELINE_DEBUG=1`. `--pipeline-windows` and `--adapt-async 1` combine: the engine turns the asynchronous tier
 off beside `--pipeline-windows 2` only when `STRATA_PIPELINE_ADAPT_ASYNC=0` is set. What switches either one off is
