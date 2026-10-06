@@ -87,7 +87,9 @@ until the generated tokens have been validated.
 **AMD (HIP), 2026-10-06:** the helper caches and the peer tier below run on 2x RX 7900 XTX (IQ3_XXS, one
 conversation), but slower than a layer split of the same two cards (72.9 tok/s): helper 53.8-59.3, peer 67.2. With
 `auto` the helper took all but 512 MiB of the card, which drives the desktop there, and the requests stalled (18.6
-tok/s): give it a number of experts that leaves the desktop room. Details: bench/results/2026-10-06-expert-parallel-7900xtx.
+tok/s): give it a number of experts that leaves the desktop room. Spin-waiting on the helper (as the CUDA build
+does) changed nothing there; `--remote-expert-opt` was slower than the plain helper (53.8 vs 59.3-61.8). Details:
+bench/results/2026-10-06-expert-parallel-7900xtx.
 
 ## Optional helper decode optimization
 
