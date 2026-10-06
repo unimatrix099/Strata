@@ -41,6 +41,27 @@ ROCm 7.9.0, IQ3_XXS, 128K context, MTP), engine from the `multi-agent-batch` bra
 - Run them with `nosplit-engine.sh` as the config's engine (the server adds `--layer-split` for a config with two
   GPUs; the wrapper drops it) - an experiment, not a setup option.
 
+### Spin-waiting on the helper (tested, no change)
+
+On NVIDIA the helper card is initialised to spin-wait (`cudaInitDevice(..., cudaDeviceScheduleSpin)`): a sleeping
+wait was measured at ~0.3 ms per round trip there. The HIP build skipped it, so that was a candidate for the AMD
+gap. Tried with `hipSetDeviceFlags(hipDeviceScheduleSpin | hipDeviceMapHost)` on the helper before its first use
+(HIP accepted it), 11,000 experts on the helper, the same first answers in each pair:
+
+| helper | spin-wait | tok/s | ms per window | main card waited | host per window |
+|---|---|---|---|---|---|
+| `--remote-expert-opt` | on | 53.8 | 37.85 | 20.80 | 10.00 |
+| `--remote-expert-opt` | off (as built) | 53.7 | 37.86 | 20.76 | 10.02 |
+| plain | on | 61.8 | 37.62 | 17.52 | 8.68 |
+| plain | off (as built) | 61.8 | 35.86 | 17.00 | 7.81 |
+
+No difference, so the change was not kept: HIP's default wait is not where the helper's time goes. The host's
+8-10 ms per window is the per-layer round trip itself (the activations, the plan, the launches and the rows back,
+through pinned host memory, at every layer). `--remote-expert-opt` returns a tenth of the bytes here too (312 vs
+3,127 MiB per request), but the main card waits ~3 ms more per window with it (20.8 vs 17.0-17.5 ms): it keeps out
+of its cache the experts the helper holds, which changes what each card computes. The plain helper measured 59.3
+this morning and 61.8 here (run-to-run spread), both below one card alone and the layer split.
+
 ## What the cards cost to meet directly
 
 `p2p_pingpong.hip`: card A writes a block into card B's VRAM and raises a flag there, B answers the same way, 10,000
