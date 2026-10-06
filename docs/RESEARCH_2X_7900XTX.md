@@ -86,11 +86,17 @@ cards so that neither waits. What the profile says (`STRATA_VERIFY_PROFILE=1`, 4
   that way. Not worth it here; not built.
 - Splitting every matrix across the cards (tensor parallelism) helped dense models a lot in llama.cpp on this same
   PC, but it would mean a new window graph in this engine and an all-reduce per layer over PCIe 3.0 x8. Not tried.
-- Strata's helper caches (`--expert-cache-device1 auto --remote-expert-opt`, docs/SECOND_GPU.md) are a form of
-  expert parallelism, measured on NVIDIA only; not measured on HIP here.
+- **Measured on 2026-10-06** (bench/results/2026-10-06-expert-parallel-7900xtx): Strata's two expert-parallel modes
+  run on AMD but are slower than the layer split (72.9 tok/s): the peer tier (`--peer-device`) 67.2, the helper cache
+  (`--expert-cache-device1`) 53.8-59.3 (and 18.6 with `auto`, which filled the desktop card). Both meet at every layer
+  through the host: 8.6-10.5 ms of every window. The cards themselves meet in 2.8-11.7 us when they signal each other
+  directly (a 4-64 KB block into the other card's VRAM), ~0.6 ms per window for 48 layers - so expert parallelism
+  without the host at each layer (estimated ~85-95 tok/s) is the design to build; a tensor split's bound from a kernel
+  trace is +15-40%.
 
-So for one conversation the cards take turns, and the work went into making the turns shorter (section 2); with
-several conversations both cards can work at the same time (section 3).
+So for one conversation the cards take turns today, and the work went into making the turns shorter (section 2);
+with several conversations both cards work at the same time (section 3); and the measured path to both cards on one
+token is expert parallelism signalled card to card.
 
 ## 5. Next steps, not done
 
