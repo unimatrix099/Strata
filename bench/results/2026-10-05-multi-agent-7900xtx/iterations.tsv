@@ -1,0 +1,11 @@
+iter	label	change	1 client	2 clients total (per req)	4 clients total (per req)	TTFT last @4	decision
+0	solo	installed config, one at a time	72.0	69.7 (75.2)	73.4 (78.3)	21.4 s	baseline
+1	b2g2-trim	--batch 2 --batch-groups 2 --trim-stage-weights, split 26	71.9	74.1 (39.7)	76.2 (40.1)	14.8 s	candidate
+2	b4g2-trim	--batch 4 --batch-groups 2 --trim-stage-weights, split 26	72.2	57.6 (30.3)	112.0 (30.7)	2.6 s	candidate (best at 4)
+3	P1-b4g2	batch launches on a worker thread	70.8	54.0 (28.3)	105.4 (28.7)	2.6 s	discard (no gain; pump thread not the bottleneck: 16 ms per stage-window, the cards already overlap)
+4	b4g4/b8g2/b8g4-trim, solo8	shapes at 2/4/8 clients (8: solo 70.9, TTFT 51.1 s)	-	b4g4 71.9, b8g2 39.0, b8g4 50.7	b4g4 72.4, b8g2 74.1, b8g4 55.4 (8 clients: 77.4 / 148.1 / 109.3)	-	finding: only full groups scale; pad rows cost a token each
+5	P3-b8g2 / P3-b4g2	pipelined groups run only their active slots (no pad rows)	-	b8g2 70.1 (37.7), b4g2 75.4 (40.6)	b8g2 104.8, b4g2 112.1 (8 clients: b8g2 150.8)	2.9 / 2.6 s (8: 5.3 s)	keep (exact: batch_test 3/8 and 8/8 IDENTICAL)
+6	b8g1-trim / P3-b8g2-auto	no groups vs 2 groups (auto split, no trim)	-	48.7 / 70.9	70.0 / 104.6 (8: 97.0 / 150.0)	4.8 / 5.8 s @8	groups +44-55%; trim not needed
+7	cfg-parallel8 (+bal)	server: "parallel" on a split adds --batch-groups; new requests to the least busy group	66.2	60.9 -> 69.5 (balanced, 3 rounds 68.7-70.9)	105.4 (8: 150.5)	5.8 s @8	keep
+verify	review	no bug; 3 risks + 4 nits	-	-	-	-	fixed: slot cache kept for pipelined slots (next turn IDENTICAL, reused), setup note fit/pipeline conditions, batch_groups type message, capture time out of the launch timer
+final	final-parallel8	committed engine + server, "parallel": 8	-	70.4 (38.7)	101.4 (27.9) (8: 151.1)	5.2 s @8	verified

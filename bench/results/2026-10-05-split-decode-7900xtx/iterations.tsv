@@ -1,0 +1,11 @@
+iter	label	change	story_tok_s	code_tok_s	exact	decision
+0	det-base/det-base2	baseline (adapt off, fresh, rep 0)	50.6-51.1	52.1-52.4	ref	baseline
+1	E1-det	async commit on a multi-GPU split	53.4	54.9	yes (27f48d 0a86d3)	keep
+2	E2-det	early launch of the later stage's window graph (worker thread, go flag)	65.2	71.7	yes (27f48d 0a86d3)	keep
+2f	E2-full / E2-off-full / base-full	full protocol (adapt on, 3 reps, median all)	72.2 / 57.5 / 55.0	-	yes (rep0 4f4ed5 4ce8bd)	keep
+3	E3-det / E3-full / E3-off-full	keep-warm spin (wait_flag_ge_for, side stream) on stage 0 between windows	63.9 / 66.2 / 66.0	71.0 / 82.0 / 82.8	yes	discard (no gain: 71.4 vs 71.7 off; stage 0 wait 11.8 ms unchanged)
+4	env-batch16/64/256, pktcap0, devkernarg1, kcopy0	HIP graph-launch runtime switches	61.7-63.5	68.7-70.3	yes	discard (all within or below E2-det 68.5; launch 1.46-1.74 ms unchanged)
+5	E2-res700-full	upper bound: 700 MiB reserve on both cards (94% resident)	58.6	19.8	n/a (other residency)	discard: the desktop card spilled 19.4 GB into GTT mid-run (15-20 tok/s); a per-card reserve is the safe form, est. <=2-3%
+6	E5-spec6/spec5/minp03/minp07	speculation settings on top of E2	65.4-67.5	74.7-83.8	n/a (other windows)	discard (71.5/69.3/70.0/68.5 vs 72.2)
+7	E6-K20 / E6-K22	split point (auto is K=26)	64.6 / 65.1	76.2 / 75.9	n/a	discard (69.2 / 67.3 vs 72.2)
+verify	fix-det / fix-full	review fixes (guard raises all waits, release vs worker, early state first, worker exceptions)	64.3 / 66.2	70.2 / 83.4	yes (27f48d 0a86d3; 4f4ed5 4ce8bd)	keep (71.1 vs 72.2, noise); stall test released both GPUs

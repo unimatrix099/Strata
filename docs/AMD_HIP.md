@@ -224,7 +224,8 @@ card (layers 0-25, a 19.3 GiB expert cache), with the default 700 MiB reserve.
   decodes the same (72.2 tok/s with the desktop card second, 74.5 first), so the reserve was the fix. One card alone
   decodes 59.3-60.1 tok/s; the split was slower than that (55.0) until two changes to its hand-off (the commit no
   longer waits, and the later stage's window graph launches early) took it to **72.2 tok/s**, the same tokens.
-  Prompts unchanged (1,241-1,246 tok/s on ~4.6K tokens). See [MULTI_GPU.md](MULTI_GPU.md#decode-on-a-split-the-stages-hand-off).
+  Prompts unchanged (1,241-1,246 tok/s on ~4.6K tokens). See [MULTI_GPU.md](MULTI_GPU.md#decode-on-a-split-the-stages-hand-off);
+  several requests at once and the whole day's measurements: [RESEARCH_2X_7900XTX.md](RESEARCH_2X_7900XTX.md).
 - **Build on ROCm 7.9:** its clang (20.0) rejects `__shared__ alignas(16)` ("'alignas' attribute cannot be applied
   to types"); `iq_kernels.cu` now uses `__shared__ __align__(16)` like the other kernels. ctest on this PC: 61 of 65
   pass. `ple_parity` needs the Q2_0 fixture, `expert_multi_test` an AVX-512 CPU, `platform_memory_test` a memlock

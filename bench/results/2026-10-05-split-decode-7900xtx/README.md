@@ -24,8 +24,8 @@ One GPU never reaches either change; its decode measured the same (59.3 vs 59.7 
 `bench.py` starts `serve/server.py` with a variant of the installed config (extra engine flags, environment, GPU
 list, another engine binary), sends one warm-up, then a story prompt and a code prompt 3 times each (greedy, 512
 tokens; the model thinks, so most tokens are reasoning), and records decode tok/s, draft acceptance and a hash of the
-reasoning + answer text. `show.py` prints the results (`data/results.jsonl`); engine and server logs are in
-`data/logs/`.
+reasoning + answer text. `show.py` prints the results (`data/results.jsonl`); the engine and server logs went to `data/logs/`
+(kept on the PC: git ignores `logs/`). `iterations.tsv` lists every try in order with its decision.
 
 - **Speed:** the median of the 6 answers ("all").
 - **Exactness:** with `--adapt-every 0`, the first story and code answer after a fresh start are reproducible (the
