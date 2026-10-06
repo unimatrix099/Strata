@@ -124,3 +124,6 @@ python3 bench/results/2026-10-05-multi-agent-7900xtx/mbench.py --label p8 --clie
 python3 bench/results/2026-10-05-multi-agent-7900xtx/vpy.py tools/batch_test.py --exe engine/strata \
     --config strata-iq3_xxs.json --batch 8 --n 8 --extra "--layer-split 26 --batch-groups 2 --pcie-frac 0 --adapt-every 1000000"
 ```
+
+`data/results.jsonl` holds every run (engine and server logs stayed on the PC: git ignores `logs/`);
+`iterations.tsv` lists every try in order with its decision. Overview of the day's work: docs/RESEARCH_2X_7900XTX.md.

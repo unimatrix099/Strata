@@ -1,0 +1,57 @@
+{
+ "goal": "improve token generation (decode) speed on 2x RX 7900 XTX; document; multi-GPU-only optimizations behind a switch",
+ "archetype": "optimize-metric",
+ "mode": "loop",
+ "terminal_choice": "stop-at-verified",
+ "target": "best-effort",
+ "predicate": "python3 bench/results/2026-10-05-split-decode-7900xtx/bench.py --config <cfg> -> median decode tok/s (story+code x3, greedy) on --gpus 1,0; higher is better; guards: answers correct, 1-GPU decode within 2%, ctest 61/65",
+ "cycle": 8,
+ "units_remaining": [
+  55.0,
+  57.5,
+  72.2,
+  71.4,
+  68.5,
+  72.2,
+  71.5,
+  69.2
+ ],
+ "pipeline": [
+  {
+   "hop": "loop",
+   "iters": "1-7",
+   "outcome": "progressed (E1, E2 kept)"
+  },
+  {
+   "hop": "plateau",
+   "outcome": "5 consecutive no-gain (E3, env, reserve, spec, K)"
+  },
+  {
+   "hop": "verify",
+   "outcome": "progressed (review fixes, stall test)"
+  }
+ ],
+ "incumbent": {
+  "commits": [
+   "dd2c0e5",
+   "43a37bf",
+   "a31da31",
+   "13d6568"
+  ],
+  "decode_tok_s_median": 72.2,
+  "after_fixes": 71.1,
+  "baseline": 55.0,
+  "one_gpu": "59.3 vs 59.7 base"
+ },
+ "max_cycles": 25,
+ "plateau_n": 5,
+ "pending_verify": false,
+ "status": "PLATEAU (verified)",
+ "verify": {
+  "review": "1 bug + 3 risks in early-launch failure paths, fixed in a31da31",
+  "stall_test": "pass",
+  "ctest": "61/65 unchanged",
+  "smoke": "7/7",
+  "prefill": "1241-1246 vs 1245"
+ }
+}

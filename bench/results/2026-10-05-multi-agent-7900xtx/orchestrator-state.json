@@ -1,0 +1,48 @@
+{
+ "goal": "several agents at once on 2x RX 7900 XTX: both GPUs busy instead of waiting; other ideas later",
+ "archetype": "explore",
+ "mode": "loop",
+ "terminal_choice": "stop-at-verified",
+ "predicate": "python3 bench/results/2026-10-05-multi-agent-7900xtx/mbench.py --label <cfg> -> summary total tok/s at 2 and 4 clients vs the installed config; single-client tok/s and greedy correctness checked; recommendation in bench/results/2026-10-05-multi-agent-7900xtx/README.md",
+ "cycle": 8,
+ "units_remaining": [],
+ "pipeline": [
+  {
+   "hop": "explore/measure",
+   "outcome": "progressed"
+  },
+  {
+   "hop": "loop",
+   "outcome": "P3 kept, server groups + balance kept, P1 dropped, P2 not built"
+  },
+  {
+   "hop": "verify",
+   "outcome": "review: no bug, 3 risks fixed; exactness tests IDENTICAL"
+  }
+ ],
+ "incumbent": {
+  "commits": [
+   "b01fefb",
+   "c5674a0",
+   "3cffee9",
+   "07080e9",
+   "aabd983"
+  ],
+  "parallel8_total_tok_s": {
+   "1": "66-69",
+   "2": 70.4,
+   "4": 101.4,
+   "8": 151.1
+  },
+  "one_at_a_time": {
+   "1": 72.0,
+   "2": 69.7,
+   "4": 73.4,
+   "8": 70.9
+  }
+ },
+ "max_cycles": 25,
+ "plateau_n": 5,
+ "status": "CONVERGED (explore: measured + recommendation + adopted)",
+ "pending_verify": false
+}
