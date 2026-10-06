@@ -102,7 +102,16 @@ with several conversations both cards work at the same time (section 3). Expert 
 for one conversation on this model, even signalled card to card, because the experts are a small part of a token's
 work; only a tensor split (weeks, +15-40% estimated) would put both cards on every part of it.
 
-## 5. Next steps, not done
+## 5. Fewer kernels per token (bench/results/2026-10-06-kernel-fusion-7900xtx)
+
+A kernel in a HIP graph costs at least 2.86 us on these cards, and a decode window launches ~2,435 of them, two
+thirds under 8 us; about a third of a layer's GPU time is the space between kernels. Merging the CPU's expert rows,
+the GPU's and the combine into one kernel kept the same tokens and saved ~0.34 ms of a window (~1%,
+`STRATA_COMBINE_GATHER=0` turns it off). Merging the indexer's appends saved nothing: they sit mostly in the commit,
+which runs while that card is idle. Only kernels on the window's path from layer to layer count; the ceiling with
+many more merges is estimated at ~5%.
+
+## 6. Next steps, not done
 
 - **A VRAM reserve per card:** only the desktop card needs 3 GB; the other could hold ~2.3 GB more experts. The CPU's
   experts cost 2.9-4.4 ms per window with 8 slots (75% in VRAM) and 0.7-1.6 ms for one conversation.
