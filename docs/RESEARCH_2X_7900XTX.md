@@ -10,6 +10,8 @@ this PC; the details, raw results and tools are in the two result folders linked
 | 4 conversations at once (in all) | 73.4 tok/s, the 4th answer starts after 21 s | **101-105 tok/s**, after 2.8-3.0 s |
 | 8 conversations at once (in all) | 70.9 tok/s, the 8th answer starts after 51 s | **150-151 tok/s**, after 5.2-5.8 s |
 | prompts (~4.6K tokens) | 1,245 tok/s | 1,241-1,246 tok/s (unchanged) |
+| **on upstream's new main (07 Oct), one conversation, `--pipeline-windows 2`** | 58.0 tok/s (upstream as it was) | **92.7 tok/s** |
+| **on upstream's new main, 8 conversations at once** | 70.9 tok/s | **185.8 tok/s** |
 
 The answers are the same: greedy runs give the same tokens as before (checked by hashes and by the repository's
 exactness tests).
@@ -102,7 +104,25 @@ with several conversations both cards work at the same time (section 3). Expert 
 for one conversation on this model, even signalled card to card, because the experts are a small part of a token's
 work; only a tensor split (weeks, +15-40% estimated) would put both cards on every part of it.
 
-## 5. Next steps, not done
+## 5. Fewer kernels per token (bench/results/2026-10-06-kernel-fusion-7900xtx)
+
+A kernel in a HIP graph costs at least 2.86 us on these cards, and a decode window launches ~2,435 of them, two
+thirds under 8 us; about a third of a layer's GPU time is the space between kernels. Merging the CPU's expert rows,
+the GPU's and the combine into one kernel kept the same tokens and saved ~0.34 ms of a window (~1%,
+`STRATA_COMBINE_GATHER=0` turns it off). Merging the indexer's appends saved nothing: they sit mostly in the commit,
+which runs while that card is idle. Only kernels on the window's path from layer to layer count; the ceiling with
+many more merges is estimated at ~5%.
+
+## 6. On upstream's new main (bench/results/2026-10-07-upstream-port-7900xtx)
+
+Upstream rewrote its `main` on 2026-10-06 (1,159 new commits). Branch `amd-7900xtx-port` carries our changes onto it.
+Upstream as it was decoded 58.0 tok/s here; with our asynchronous commit and early launch 77.5; with its own new
+`--pipeline-windows 2` - card 1 starts the next window on a guess while card 2 verifies this one, rolled back when the
+guess is wrong - 92.7 tok/s (+25% over the same build without it). Eight conversations at once: 185.8 tok/s (151 on
+the old branch). The early launch adds nothing on top of the pipeline but is +29% without it; the merged combine is
+~0.5% there. The stream-fork switch and `k8v4` gave nothing.
+
+## 7. Next steps, not done
 
 - **A VRAM reserve per card:** only the desktop card needs 3 GB; the other could hold ~2.3 GB more experts. The CPU's
   experts cost 2.9-4.4 ms per window with 8 slots (75% in VRAM) and 0.7-1.6 ms for one conversation.
