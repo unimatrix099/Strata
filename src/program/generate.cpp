@@ -10030,6 +10030,7 @@ int main(int argc, char** argv) {
                     bool spec = false;     // launched speculatively (behind the window before, ahead of its verdict)
                     bool made = false;     // made from a chain (its outcome can be scored even when the gate held it)
                     bool sfx = false;      // a lookup window (the suffix drafter's drafts)
+                    int32_t alt = -1;      // STRATA_MTP_TOP2 (diagnostic): the drafter's second choice for tok[0]
                     int sfx_match = 0;
                 };
                 auto V0 = [&](const PW& w) -> strata::core::Verifier& { return *PV[0][w.seq & 1]; };
@@ -10136,6 +10137,7 @@ int main(int argc, char** argv) {
                     B.seq = A.seq + 1;
                     B.p = A.p + A.T;
                     B.tok[0] = oc[base];
+                    B.alt = oc == mtp.chain_tok() && mtp.chain_tok2()[base] != 0 ? mtp.chain_tok2()[base] : -1;
                     B.T = t_rule(op, base + 1, avail);
                     for (int i = 1; i < B.T; ++i) {
                         B.tok[i] = oc[base + i];
@@ -10281,6 +10283,8 @@ int main(int argc, char** argv) {
                 int64_t cal_n[10] = {}, cal_on[10] = {};   // per p_on decile: windows scored, on the path
                 double last_verdict = 0.0;
                 int64_t pl_disagree = 0, pl_late = 0;
+                int64_t pl_bonus_wrong = 0, pl_bonus_alt = 0;   // STRATA_MTP_TOP2: whole windows whose bonus guess missed,
+                                                                // and how many of those the second choice would have hit
                 static const bool pl_prestage = [] {   // STRATA_PIPELINE_PRESTAGE=0: B staged at its launch
                     const char* v = pipe_dbg_env("STRATA_PIPELINE_PRESTAGE");
                     return v == nullptr || std::atoi(v) != 0;
@@ -10494,6 +10498,10 @@ int main(int argc, char** argv) {
                     else if (stop_req.load()) finish = "cancel";
                     const bool last = eos || produced_n >= max_new || stop_req.load();
                     const bool on = B.launched && a == A.T - 1 && B.tok[0] == outp[(size_t) A.T - 1];
+                    if (B.made && a == A.T - 1 && B.tok[0] != outp[(size_t) A.T - 1]) {
+                        ++pl_bonus_wrong;
+                        if (B.alt >= 0 && B.alt == outp[(size_t) A.T - 1]) ++pl_bonus_alt;
+                    }
                     if (B.made) {   // the gate's calibration: would B have been on the path, by its estimate p_on
                         const bool would = a == A.T - 1 && B.tok[0] == outp[(size_t) A.T - 1];
                         const int bin = std::min(9, std::max(0, (int) (B.p_on * 10.0f)));
@@ -10602,6 +10610,10 @@ int main(int argc, char** argv) {
                                  cls_n[0], avg(cls_ms[0], cls_n[0]), avg(cls_tok[0], cls_n[0]), cls_n[1],
                                  avg(cls_ms[1], cls_n[1]), avg(cls_tok[1], cls_n[1]), (long long) pl_disagree,
                                  (long long) pl_late);
+                    if (pl_bonus_wrong > 0)
+                        std::fprintf(stderr, "strata pipeline bonus: %lld whole windows with a wrong bonus guess, the "
+                                             "drafter's second choice right in %lld\n",
+                                     (long long) pl_bonus_wrong, (long long) pl_bonus_alt);
                     std::string cal;
                     char b[48];
                     for (int i = 0; i < 10; ++i)
