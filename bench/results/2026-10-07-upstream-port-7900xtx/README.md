@@ -127,8 +127,19 @@ is spread over the experts, the dense projections and the small glue kernels.
   `--pcie-frac 0`; the installed config probes a share of the misses (0.55 scaled by the link), so they do work and
   cannot be left out of the graph.
 
-What is left is merging the small kernels (a `quantize_q8_1` after almost every norm, ~69 per window; the norm split,
-the doorbell, the plan copy), each worth ~1-2% of the half, every one needing its own exactness check.
+- **The quantize merged into its producer** - upstream's `STRATA_QFUSE=1` (written for gfx1151, an environment
+  switch elsewhere): the hyper-connection read and the GDN output norm write the q8_1 image themselves, so the separate
+  `native_quantize_q8_1` launches go. Exact here too: the same text in every run, `gr_parity` with the switch "T 1..8,
+  direct and graph replays: pass". Six runs 93.65-95.7 tok/s (mean 94.96) against four without it 94.0-95.6 (94.5):
+  ~+0.5%, inside the spread between identical runs. The installed config now carries it (`"STRATA_QFUSE": "1"`).
+- `STRATA_VERIFY_QDEDUP=1` on top (the shared expert reads the experts' q8_1 image instead of quantizing the same input
+  again): 95.65 / 94.1 against 93.65 / 95.7 - no measurable change.
+- Upstream's other exact gfx1151 decode switches, one at a time on top of `STRATA_QFUSE` (95.4 / 95.35 with it alone):
+  `GDN_SPLIT` 95.25, `LFUSE` 95.35, `ATTN_LANECELL` 95.6, `PLE_BATCH` 95.2 - the same; `EXPERT_V2` 94.65, `TSUM`
+  94.3, `Q6_PACKED` 94.15, `Q8_PACKED` 93.9, `MMVF_ROWS` 93.05 - slower; all ten together 91.25 / 91.5. Not kept.
+
+Removing ~70 launches per window saves ~0.2 ms of card 2's ~11 ms, and the cards overlap, so merging the other small
+kernels the same way would give well under 1% each - below what a tok/s run can show.
 
 One reference run (`KA-ref1`) wrote three different story texts under the exact settings (`STRATA_IQ_MT_MIN=1
 --pcie-frac 0 --adapt-every 0`); the three runs after it wrote one. The exact protocol is not watertight: compare
