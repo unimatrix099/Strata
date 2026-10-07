@@ -58,6 +58,33 @@ would otherwise have waited. The gate's estimate is well calibrated (its top dec
 A lower gate gives shorter windows, but the texts differ between runs and tok/s does not confirm it: a candidate
 (~3-5% per window at 0.1) for more repeats, the default kept.
 
+### Tuning the pipeline on this PC (07 Oct)
+
+The gate and the draft settings change only when card 1 guesses, never what is emitted: with `STRATA_IQ_MT_MIN=1
+--pcie-frac 0 --adapt-every 0` every run below wrote the same text (story 3e41c3, code 32e166), so tok/s compares
+exactly (greedy story + code x3).
+
+| setting (pipelined) | tok/s | |
+|---|---|---|
+| gate 0.2 (default), `--spec 4 --spec-min-p 0.5` | 86.4 (85.7, 87.0) / 88.0-88.5 | the reference |
+| gate 0.1 | 89.0 (88.9, 89.0) | +3.0% |
+| gate 0.0 | 89.4 (88.8, 89.9) | +3.5%, with 146 rollbacks against 117 |
+| gate 0.1, `--spec 3` | 90.9 | +3.0% over gate 0.1 alone |
+| gate 0.1, `--spec-min-p 0.7` | 91.7 (twice) | +3.9% |
+| gate 0.1, `--spec 3 --spec-min-p 0.6` / `0.7` | 93.3 / 93.2 | +5.6% |
+| gate 0.1, `--spec 5` / `--spec 6` / `--spec-min-p 0.3` | 85.5 / 81.7 / 81.5 | slower |
+| gate 0.1, `--spec-min-p 0.8` / `0.9` / `--spec 3 --spec-min-p 0.8` | 88.9 / 90.3 / 89.8 | |
+
+Why shorter drafting wins here, unlike the serial loop: `pltrace_sum.py` on a `STRATA_PIPELINE_TRACE` (the pipeline's
+event log) shows each card busy only ~60% of the time, both halves equal (11.1 / 11.2 ms median), and the cycle after a
+right guess 14.1 ms but after any other verdict 26.0 ms - the draft chain (4.0 ms, on card 2), then card 1's half, then
+card 2's half, in turn. The chain sits on that path, so a shorter one pays even with fewer tokens per window.
+
+In the installed config with the adaptive tier on (two interleaved pairs): `--spec 3 --spec-min-p 0.7` 105.7 / 92.9
+tok/s against 93.1 / 89.7, windows 17.55-17.78 against 22.65-22.69 ms. The config now carries `--pipeline-windows 2
+--spec 3 --spec-min-p 0.7` and `"env": {"STRATA_PIPELINE_DEBUG": "1", "STRATA_PIPELINE_THETA": "0.1"}` (the gate is
+read only with the debug switch).
+
 ## Several conversations at once (`"parallel": 8`, total tok/s, `mbench.py`)
 
 | clients | the old branch | the port |

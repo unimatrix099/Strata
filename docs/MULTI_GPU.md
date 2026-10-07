@@ -249,6 +249,9 @@ Two cards, exactly two stages, `--serve`. In the config:
 - **Measured on 2x RX 7900 XTX** (IQ3_XXS, 128K context, int8 KV, layers 0-25 + 26-47, greedy, a story and a code
   prompt x3; bench/results/2026-10-07-upstream-port-7900xtx): 73.9 -> 92.7 tok/s (+25%), 27.85 -> 23.09 ms per
   window; 43% of the guessed windows were right (14.6 ms each), and the rolled-back ones cost nothing measurable.
+  Tuned there: a gate of 0.1 (`STRATA_PIPELINE_DEBUG=1 STRATA_PIPELINE_THETA=0.1`, +3.0%) and shorter drafting,
+  `--spec 3 --spec-min-p 0.7` (+5.6% more, the same text): the draft chain runs between a verdict and the next
+  window after every wrong guess, so a shorter chain pays here where it did not in the serial loop.
 
 The `STRATA_PIPELINE_*` tuning and test variables (THETA, FORCE_MISS, SWITCH, LOG, TRACE and the like) are read only with
 `STRATA_PIPELINE_DEBUG=1`. `--pipeline-windows` and `--adapt-async 1` combine: the engine turns the asynchronous tier
