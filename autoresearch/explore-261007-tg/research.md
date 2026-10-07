@@ -71,5 +71,9 @@ of its bonus p1 < x, a rescue worth ~11.5 ms (a kept speculative window instead 
 | p1 < 0.9 | 1,456 | 287 | 616 | +7.8% | +5.9% |
 | always | 1,848 | 296 | 992 | +7.1% | +4.0% |
 
-An upper estimate (the GDN state copy for the branch and a 1-row branch's fewer tokens are not in it): **go**, at
-~+4-6% expected.
+Correction (same day): the table assumes a rescued window is a kept speculative window - drafts after the second
+choice and the next window prepared from it. That needs a second chain on card 2's drafter branching at the bonus and
+the branch's own attention cells (card 1's paged, streamed KV and the draft layer's). A branch of the second choice
+alone (one row, no drafts): ~9 ms for its one token on card 2 against ~11 ms per token in the fresh window it
+replaces, which still follows it - ~2 ms saved per rescue against ~0.94 ms of tax per right guess: ~0% net. The full
+version: ~+3-5%, weeks of work.
