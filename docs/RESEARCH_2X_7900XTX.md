@@ -17,6 +17,33 @@ this PC; the details, raw results and tools are in the two result folders linked
 The answers are the same: greedy runs give the same tokens as before (checked by hashes and by the repository's
 exactness tests).
 
+## Summary: what is kept (07 Oct)
+
+One conversation on both cards (IQ3_XXS, decode, tok/s):
+
+| step | tok/s | gain |
+|---|---|---|
+| upstream's main as it was (06 Oct) | 58.0 | - |
+| + the asynchronous commit (ours) | 60.0 | +3.4% |
+| + the early launch of card 2's window (ours) | 77.5 | +29% |
+| + upstream's `--pipeline-windows 2` (theirs, on in the config) | 92.7 | +20% |
+| + gate 0.1, `--spec 3 --spec-min-p 0.7` (tuning) | | ~+8% |
+| + the English + code draft vocabulary | **96.8** (installed config) | +3.0% |
+
+- Overall 58.0 -> 96.8 tok/s, **+67%** over upstream as it was (the old code of 05 Oct: 55 -> 72, +31%; one card
+  alone ~60). With the pipeline on, the early launch adds ~0 (the cards overlap already); without it, +29%.
+- Small, kept: the merged combine (~+0.5%), `STRATA_QFUSE=1` (~+0.5%, inside the noise). Kept with no measurable
+  gain in the installed config: the reserve per card (`--vram-reserve-mib 700 --vram-reserve-later-mib 3072`).
+
+Several conversations at once (`"parallel"` slots, total tok/s): 4 at once 73.4 -> 133.0 (**+81%**), 8 at once
+70.9 -> 185.8 (**+162%**).
+
+Fixed: `STRATA_QFUSE=1` with `"parallel"` slots gave garbage text (the installed engine has the fix).
+
+Tried, not kept: a later layer split, upstream's other gfx1151 switches, the resident head kernel,
+`HIP_FORCE_DEV_KERNARG`, and the second branch for the bonus token (built lossless on branch `bonus-branch`, no gain).
+Details in sections 6-8.
+
 ## The PC
 
 - 2x AMD Radeon RX 7900 XTX (gfx1100, 24 GB each), both on PCIe 3.0 x8 (the engine's probe: 7.1 GB/s). HIP device 0
