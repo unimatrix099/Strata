@@ -109,6 +109,31 @@ profiler).
   no gain (94.7 / 93.1 vs 94.3 / 94.6 tok/s): not kept. (A first version also shortened the layout's stride between
   KV heads and changed the text - the exactness check caught it.)
 
+### Card 2's half (07 Oct)
+
+Card 2 (the later stage: layers 26-47, the head and the draft chain) takes ~11 ms of each pipelined window. A
+`rocprofv3 --kernel-trace` of its main stream: ~938 kernels per window, 8.4 ms of kernel time, 547 of the kernels
+under 5 us. Inside one MoE layer (38 kernels) the kernels ran 283 us and the gaps between them 152 us - ~4 us at
+every boundary under the profiler. No single kernel stands out: the output head is ~0.9 ms per window, the rest
+is spread over the experts, the dense projections and the small glue kernels.
+
+- **The output head's kernel kept resident** (each workgroup walks rows `blockIdx.x, + grid, ...` instead of one
+  workgroup per two rows, 124,160 of them; same loads, order and reduction): bitwise the same outputs at every column
+  count (`head_bench`, 2560 x 248,320 Q5_K), 1-3 columns 3-6% faster (0.667 -> 0.626 ms at 1), 4 columns 30% slower
+  (1.12 -> 1.47 ms). A verify window is usually 4 columns: not kept.
+- **`HIP_FORCE_DEV_KERNARG=1`** (kernel arguments in device memory, a common ROCm launch-latency tip): 94.0 / 94.35
+  tok/s against 95.6 / 94.0, the same text - no change.
+- The PCIe share's kernels (`fetch_blobs`, `rebase_ptrs` and a second expert pass, 6 per layer) are empty only at
+  `--pcie-frac 0`; the installed config probes a share of the misses (0.55 scaled by the link), so they do work and
+  cannot be left out of the graph.
+
+What is left is merging the small kernels (a `quantize_q8_1` after almost every norm, ~69 per window; the norm split,
+the doorbell, the plan copy), each worth ~1-2% of the half, every one needing its own exactness check.
+
+One reference run (`KA-ref1`) wrote three different story texts under the exact settings (`STRATA_IQ_MT_MIN=1
+--pcie-frac 0 --adapt-every 0`); the three runs after it wrote one. The exact protocol is not watertight: compare
+runs only when their hashes match.
+
 ## Several conversations at once (`"parallel": 8`, total tok/s, `mbench.py`)
 
 | clients | the old branch | the port |
