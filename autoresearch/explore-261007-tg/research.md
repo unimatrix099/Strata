@@ -49,3 +49,27 @@ card 1 (more rows, a second GDN state and its own KV cells for the same position
 
 Lesson: a change that alters the expert mix changes the text, so compare ms per window (winms.py / summ.py) over many
 prompts; and the exact protocol (no PCIe share) can show gains the installed config does not.
+
+## Option 1, the measured go / no-go (a second branch for the bonus)
+
+`card1_cost.py` on the pipeline trace (today's config, 8 prompts):
+
+- card 1's window: 8.66 ms at 1 row, 9.76 at 2, 11.09 at 3 (fresh; speculative +0.1-0.2 ms) - **~1.1-1.3 ms per row**;
+- after a wrong guess card 1 sits idle 11.8 ms (median; 10th percentile 9.9) before the corrected window: extra rows
+  there are hidden;
+- after a right guess card 1 is already the later card: it finishes B a median 1.08 ms after card 2 finishes A. One
+  more row (+1.2 ms) makes card 2 wait +0.94 ms per right guess, two rows (+2.4 ms) +2.03 ms.
+
+A branch in every window would tax every right guess. `alt_policy.py` on `STRATA_MTP_TOP2_LOG` (1,848 launched B
+windows: bonus right 992, second choice right in 296 of the 856 misses) - the branch only when the drafter's probability
+of its bonus p1 < x, a rescue worth ~11.5 ms (a kept speculative window instead of a fresh one), over ~35 s of decode:
+
+| branch when | windows with it | rescued | right guesses taxed | net, +1 row | net, +2 rows |
+|---|---|---|---|---|---|
+| p1 < 0.5 | 808 | 158 | 252 | +4.5% | +3.7% |
+| p1 < 0.7 | 1,306 | 266 | 510 | +7.4% | +5.8% |
+| p1 < 0.9 | 1,456 | 287 | 616 | +7.8% | +5.9% |
+| always | 1,848 | 296 | 992 | +7.1% | +4.0% |
+
+An upper estimate (the GDN state copy for the branch and a 1-row branch's fewer tokens are not in it): **go**, at
+~+4-6% expected.
