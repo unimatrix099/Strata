@@ -131,6 +131,8 @@ public:
     bool chain_live() const { return chain_live_; }
     const int32_t* chain_tok() const { return chain_tok_; }
     const float* chain_prob() const { return chain_prob_; }
+    /// STRATA_MTP_TOP2=1 (diagnostic): the drafter's second choice at each chain output (0 when off)
+    const int32_t* chain_tok2() const { return chain_tok2_; }
 
     double ms_draft = 0, ms_prefill = 0;
     int64_t rounds = 0;
@@ -209,6 +211,7 @@ private:
     cudaEvent_t ev_step_[8] = {};                       ///< after each of the first n_early outputs
     int steps_seen_ = 0, chain_n_ = 0, chain_early_ = 0;
     int32_t chain_tok_[8] = {};
+    int32_t chain_tok2_[8] = {};
     float chain_prob_[8] = {};
     int64_t n_vocab_ = 0;
     uint64_t vram_ = 0;
@@ -237,6 +240,8 @@ private:
     int32_t *h_tok_ = nullptr, *m_tok_ = nullptr, *h_step_ = nullptr, *m_step_ = nullptr;
     int32_t *h_pos_ = nullptr, *m_pos_ = nullptr, *h_row_ = nullptr, *m_row_ = nullptr;
     int32_t *h_out_ = nullptr, *m_out_ = nullptr;
+    int32_t *h_out2_ = nullptr, *m_out2_ = nullptr, *out2_ids_ = nullptr;   // STRATA_MTP_TOP2
+    bool top2_on_ = false;
     float *h_prob_ = nullptr, *m_prob_ = nullptr;   // each draft's probability under the draft layer
     // the draft head: the main head's rows for a token subset (rt/draft_vocab.bin), or the whole head
     uint8_t* dhead_ = nullptr;

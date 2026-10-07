@@ -35,7 +35,17 @@ Goal: one conversation's decode speed, beyond what was already tried. Baseline (
 
 More than half of the wasted speculative windows fail on one token: the target's bonus after the drafts, which card 1
 takes from the drafter. A second branch with the drafter's second choice would rescue the share of those where it is
-right - to be measured (the chain's top-probability kernel keeps only the first choice).
+right.
+
+Today's config (8 prompts, 2,066 windows): bonus right 48.8%, bonus wrong 37.9%, fewer accepted 13.3% - the bonus is
+74% of the wasted speculative windows.
+
+**The drafter's second choice** (`STRATA_MTP_TOP2=1` with `STRATA_DECODE_TIMING=1`, a diagnostic: a kernel keeps each
+chain row's second-best id, the pipeline counts it at the verdict): of 757 whole windows whose bonus guess was wrong,
+the second choice was the target's token in 236 (31%). A fresh window after a miss took ~22.3-23.9 ms, a kept
+speculative one ~10.9-12.6 ms (`strata pipeline classes`); 236 x ~11.5 ms = 2.7 s of the run's 35.0 s (2,018 windows):
+**at most ~8%** from a second branch on card 1 (B with the second choice as its row 0), before what that branch costs
+card 1 (more rows, a second GDN state and its own KV cells for the same positions).
 
 Lesson: a change that alters the expert mix changes the text, so compare ms per window (winms.py / summ.py) over many
 prompts; and the exact protocol (no PCIe share) can show gains the installed config does not.
