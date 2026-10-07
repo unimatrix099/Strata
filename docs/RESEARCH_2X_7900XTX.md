@@ -12,6 +12,7 @@ this PC; the details, raw results and tools are in the two result folders linked
 | prompts (~4.6K tokens) | 1,245 tok/s | 1,241-1,246 tok/s (unchanged) |
 | **on upstream's new main (07 Oct), one conversation, `--pipeline-windows 2`** | 58.0 tok/s (upstream as it was) | **92.7 tok/s** |
 | **on upstream's new main, 8 conversations at once** | 70.9 tok/s | **185.8 tok/s** |
+| **on upstream's new main, tuned (07 Oct), one conversation** | 92.7 tok/s | **96.8 tok/s** (story + code); 104-107 tok/s over eight prompts |
 
 The answers are the same: greedy runs give the same tokens as before (checked by hashes and by the repository's
 exactness tests).
@@ -122,10 +123,48 @@ guess is wrong - 92.7 tok/s (+25% over the same build without it). Eight convers
 the old branch). The early launch adds nothing on top of the pipeline but is +29% without it; the merged combine is
 ~0.5% there. The stream-fork switch and `k8v4` gave nothing.
 
-## 7. Next steps, not done
+## 7. Tuning one conversation on the port (07 Oct; bench/results/2026-10-07-upstream-port-7900xtx, autoresearch/explore-261007-tg)
 
-- **A VRAM reserve per card:** only the desktop card needs 3 GB; the other could hold ~2.3 GB more experts. The CPU's
-  experts cost 2.9-4.4 ms per window with 8 slots (75% in VRAM) and 0.7-1.6 ms for one conversation.
+Measured with the exact protocol (`STRATA_IQ_MT_MIN=1 --pcie-frac 0 --adapt-every 0`: the same text in every run of a
+setting that does not change which experts sit where), then in the installed config.
+
+| what | result | kept |
+|---|---|---|
+| the pipeline's gate at 0.1, `--spec 3 --spec-min-p 0.7` | +3.0%, then +5.6% (same text) | yes |
+| the English + code draft subset (`--draft-vocab en`) | +3.0% (same text); installed config 96.8 tok/s | yes |
+| the draft chain profiled | 312 kernels, 3.92 ms: the draft head 34%, attention 14%; the attention merge cut gave nothing | - |
+| card 2's half profiled | ~938 kernels per window, a third of the time in the ~4 us gaps between them; no kernel stands out | - |
+| the output head kept resident | bitwise equal; 1-3 columns 3-6% faster, 4 columns 30% slower | no |
+| `HIP_FORCE_DEV_KERNARG=1` | no change | no |
+| `STRATA_QFUSE=1` (upstream: the quantize written by its producer) | exact (`gr_parity` passes), ~+0.5%, inside the noise | yes |
+| upstream's other exact gfx1151 switches | none faster; `TSUM`, `Q6_PACKED`, `Q8_PACKED`, `MMVF_ROWS`, `EXPERT_V2` 0.8-2.5% slower | no |
+| a later layer split (28 / 30 / 32) | 18.4 -> 18.5 / 19.5 / 21.9 ms per window | no (26) |
+| a reserve per card: `--vram-reserve-mib 700` (card 1) `--vram-reserve-later-mib 3072` (the desktop card) | exact protocol +7.4% (8 prompts, hit rate 82-94% -> 89-96%, no GTT spill); installed config the same window time (its PCIe share already serves the misses: 98-99% hit) | yes (no loss) |
+
+**Where the pipeline loses time.** Card 1 runs window K+1 on the guess that K is accepted whole and that the target's
+bonus token is the drafter's. Over 2,066 windows: 48.8% right, 37.9% all drafts accepted but the bonus wrong, 13.3%
+fewer drafts accepted - the bonus is 74% of the discarded windows. With `STRATA_MTP_TOP2=1` (a diagnostic, off by
+default) the drafter's second choice was the target's bonus in 31% of those. A kept speculative window takes ~11.5 ms,
+a fresh one after a miss ~23 ms. Card 1 costs ~1.1-1.3 ms per extra row; after a wrong guess it idles ~12 ms (free),
+after a right one it is already the later card (one extra row makes card 2 wait +0.94 ms). A second branch with the
+second choice, only when the drafter's probability of its bonus is below 0.7, simulates to +5.8-7.4% - **but only if a
+rescued window is as good as a kept speculative one**: drafts after the second choice and the next window prepared
+from it, which needs a second chain on card 2's drafter branching at the bonus, and the branch's own attention cells on
+card 1 (the KV cache is paged and streamed) and in the draft layer. A branch of the second choice alone (one row, no
+drafts) gets ~9 ms per token on card 2 against ~11 ms for the fresh window it replaces, then still needs a fresh window
+after it: ~2 ms saved per rescue against ~0.94 ms of tax on every right guess it rides along with - ~0% net. The full
+version is weeks of work in the pipeline's core for ~+3-5%.
+
+**From the literature** (autoresearch/explore-261007-tg/research.md): asynchronous draft / verify (AMUSD, PEARL,
+PipeSpec), hybrid CPU / GPU experts (HybriMoE, kTransformers), windowed draft attention (Windowed-MTP) are already in
+Strata; tree verification for Gated DeltaNet hybrids (TreeWY, STree) is what the second branch borrows; megakernels
+(MPK, Hazy Research) would remove the gaps between kernels but are a rewrite; a self-distilled MTP head (FastMTP) is a
+new draft model.
+
+## 8. Next steps, not done
+
+- **A second branch for the bonus token** (section 7): worth ~+3-5% only with a branched draft chain and copy-on-write
+  attention cells on both cards; a one-row branch gains nothing.
 - **MTP drafts in batch slots:** a conversation in a slot decodes one token per window (20-40 tok/s) against ~2 with
   drafts alone (~78 tok/s); the largest lever for a request that shares the cards.
 - **Prelaunching the pipeline's graphs** (as the split does for one conversation): small here, the launches are 0.9 /
