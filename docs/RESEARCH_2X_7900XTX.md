@@ -163,8 +163,16 @@ new draft model.
 
 ## 8. Next steps, not done
 
-- **A second branch for the bonus token** (section 7): worth ~+3-5% only with a branched draft chain and copy-on-write
-  attention cells on both cards; a one-row branch gains nothing.
+- **A second branch for the bonus token** (section 7) - built on branch `bonus-branch` (`STRATA_BONUS_BRANCH=1`, off
+  by default) up to a lossless rescue: the branch rides in B's stage-0 window as slot rows (its own page in a spare
+  K/V slot, its own indexer and PLE history, the conversation's GDN state); a branch the verdict confirms becomes the
+  window and is promoted into the conversation at its commit. Exact protocol: the reference text in every run, the
+  branch's hand-off bit for bit equal to B's when it is a copy of B (143 of 143). Speed: 1 row 20.6 s against 20.2 s
+  of decode (73 rescues per run; a rescued window carries one token), 2 rows 21.8 s. Drafts after the second choice
+  would need a second drafter chain, ready only after B could launch - B waits on every branched window. Not worth
+  more work on this PC. The branch also works only below the attention selection's reach (8,192 cells).
+- Found on the way: `STRATA_QFUSE=1` with batch windows (`"parallel"` slots) read a stale q8_1 image in the GDN
+  layers (garbage text); fixed on this branch too.
 - **MTP drafts in batch slots:** a conversation in a slot decodes one token per window (20-40 tok/s) against ~2 with
   drafts alone (~78 tok/s); the largest lever for a request that shares the cards.
 - **Prelaunching the pipeline's graphs** (as the split does for one conversation): small here, the launches are 0.9 /
