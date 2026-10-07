@@ -85,6 +85,30 @@ tok/s against 93.1 / 89.7, windows 17.55-17.78 against 22.65-22.69 ms. The confi
 --spec 3 --spec-min-p 0.7` and `"env": {"STRATA_PIPELINE_DEBUG": "1", "STRATA_PIPELINE_THETA": "0.1"}` (the gate is
 read only with the debug switch).
 
+### The draft chain, profiled (07 Oct)
+
+`chain_prof.py` on a `rocprofv3 --kernel-trace` of the pipelined decode (the drafter has its own stream on the last
+card): 143 chains, 312 kernels and 3.92 ms of kernel time each (the 4.0 ms the pipeline trace measured without the
+profiler).
+
+| part of a chain | per chain | share |
+|---|---|---|
+| the draft head (`native_q5_k_mmvq`, 252 us x ~5: 106,299 tokens, 178 MiB, Q5_K) | 1.34 ms | 34% |
+| the draft layer's dense projections (Q8_0) | ~0.55 ms | 14% |
+| attention (`attn_merge` 60 us, `attn_chunk` 44 us, x5) | 0.56 ms | 14% |
+| greedy sampling, top probability, selection | ~0.28 ms | 7% |
+| the rest (hyper-connections, experts, norms, quantize) | ~1.2 ms | 31% |
+
+- **The English + code draft subset** (`--draft-vocab en`: 40,525 tokens, 68 MiB) - drafts never change the output,
+  so this is lossless; it only lowers acceptance for answers in scripts the subset lacks (CJK, Cyrillic). Same text,
+  91.7 / 91.7 -> 94.4 / 94.5 tok/s (+3.0%), drafts accepted 77.5% -> 77.3%, and ~110 MiB of VRAM back to the expert
+  cache. In the installed config (setup's way: `"draft_vocab": "en"`, data/draft_vocab_en.bin copied over the MTP
+  folder's draft_vocab.bin): 96.8 tok/s.
+- **The attention merge** walks every chunk of the capacity (the draft layer's window: 256 chunks of 64 cells) though
+  the valid cells are a prefix of `n_ids`. Stopping its loops at `ceil(n_ids / 64)` kept the same text but measured
+  no gain (94.7 / 93.1 vs 94.3 / 94.6 tok/s): not kept. (A first version also shortened the layout's stride between
+  KV heads and changed the text - the exactness check caught it.)
+
 ## Several conversations at once (`"parallel": 8`, total tok/s, `mbench.py`)
 
 | clients | the old branch | the port |
