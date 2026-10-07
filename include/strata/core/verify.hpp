@@ -228,6 +228,14 @@ public:
     /// The commit without a host sync; `ss.ple_prev` advances now (host side).  A second call for the same window
     /// (after its state was restored) replays it with another count.
     bool pl_commit_async(int n_keep, std::string& err);
+    /// STRATA_BONUS_BRANCH: a pipelined window over slot rows (`init_slots`: the conversation as slot 0 and its branch
+    /// as slot 1, their groups at the same positions), staged and launched as `run_slot_rows` does and served like
+    /// `pl_launch`'s.  A layout's graphs are captured on its first use (that syncs the stream).
+    bool pl_launch_rows(const int* rows, int S, const int32_t* tokens, const int64_t* pos, std::string& err);
+    /// The commit of ONE slot group of the last `pl_launch_rows` window (its first `n_keep` rows) without a host sync;
+    /// a second call replays it with another count, as `pl_commit_async`.  Slot 0's `ple_prev` advances (host side);
+    /// a branch's is the caller's.
+    bool pl_commit_group(int slot, int n_keep, std::string& err);
     /// Fold another verifier's counters and GPU profile into this one's (the two verifiers of one stage report once).
     void absorb_stats(Verifier& o);
     /// The watchdog's line for a pipelined verifier: in flight, layers served, the GPU's ring and flags, its events.
@@ -315,11 +323,14 @@ private:
     unsigned long long* prof_pin_ = nullptr;   ///< pinned host copy of the stamps (pipelined windows)
     bool fl_active_ = false, fl_prof_ = false, fl_ple_ = false, commit_live_ = false, pl_prestaged_ = false;
     int fl_T_ = 0;
+    int fl_G_ = 1;            ///< the in-flight window's groups (a slot window: one)
+    bool pl_rows_ = false;    ///< stage_batch for pl_launch_rows: grouped rows on a split stage (the caller drives it)
     int64_t fl_k_ = 0, fl_total_ = 0;
     double fl_since_ms_ = 0, fl_flush_ms_ = 0, fl_launch_ms_ = 0;
     int32_t pl_prev_[2] = {-1, -1};
     std::vector<uint32_t> pl_ple_rows_;   ///< the window's PLE rows (T x PLE_N_HEADS), gathered when layer 0 is served
-    bool capture_commit_batch(const int* rows, int S, int hbase, std::string& err);
+    /// `only` >= 0: the commit of that slot's group alone (STRATA_BONUS_BRANCH), its own graph
+    bool capture_commit_batch(const int* rows, int S, int hbase, std::string& err, int only = -1);
     bool stage_batch(const int* rows, int S, int hbase, const int32_t* tokens, const int64_t* pos, std::string& err);
     strata::kernels::SamplerParams sampling_ = [] {
         strata::kernels::SamplerParams s;

@@ -85,6 +85,14 @@ void add_streams_broadcast(const float* h, const float* e, float* R, int64_t n_e
 void ident_hits(const int32_t* ids, int n, int32_t* slot, int32_t* dst, int32_t* count, void* stream);
 /// The draft chain's next input: R_dst[:] = R_src[row], tok_dst[0] = ids[row], out[j] = ids[row], with
 /// row = *row_dev (device memory).  `out` may be mapped host memory.
+/// STRATA_BONUS_BRANCH: a branch window's pages.  `dev[r]` / `host[r]` (r < n_runs <= 4): the K/V byte runs (codes,
+/// scales) on the device and in the streaming host copy (null: none), `per[r]` bytes per page slot.  prep copies
+/// pages pg..pg+n_pg-1 from the slots `main_table` names (the host copy's pages where none is resident) into slots spare0.. and points `branch_table` there (-1
+/// where the page has no resident slot); promote copies the spare slots back into the main slots and the host pages.
+void branch_pages_prep(uint8_t* const* dev, uint8_t* const* host, const long long* per, int n_runs,
+                       const int32_t* main_table, int32_t* branch_table, int pg, int n_pg, int spare0, void* stream);
+void branch_pages_promote(uint8_t* const* dev, uint8_t* const* host, const long long* per, int n_runs,
+                          const int32_t* main_table, int pg, int n_pg, int spare0, void* stream);
 /// STRATA_MTP_TOP2=1 (diagnostic): each row's second-best id (ids: the rows' best), and the selected row's to out[j].
 void row_second(const float* logits, int n_rows, int n_vocab, const int32_t* ids, int32_t* out2, void* stream);
 void mtp_select2(const int32_t* out2, const int32_t* row_dev, int32_t* out, int j, void* stream);

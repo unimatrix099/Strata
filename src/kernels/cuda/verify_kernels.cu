@@ -562,6 +562,44 @@ __global__ void mtp_select_kernel(const float* __restrict__ R_src, int64_t strid
     }
 }
 
+// STRATA_BONUS_BRANCH: a branch window's own pages.  Each of `n` byte runs (the K/V codes and scales) holds `per[r]`
+// bytes per page slot.  prep: pages pg..pg+n_pg-1 copied from the slot the main table names into spare slots
+// spare0.., the branch table pointed at them (a page with no resident slot is not copied, its entry stays -1: the
+// host refuses a branch there).  promote: the spare slots back into the main slots and the host copy's pages.
+struct BranchRuns { uint8_t* dev[4]; uint8_t* host[4]; long long per[4]; int n; };
+__global__ void branch_page_prep_kernel(BranchRuns r, const int32_t* __restrict__ main_table, int32_t* branch_table,
+                                        int pg, int n_pg, int spare0) {
+    const int i = blockIdx.y, run = blockIdx.z;
+    const int src = main_table[pg + i];
+    // the page's cells from its resident slot, or (not resident yet: a page the window starts) from the host copy
+    const uint8_t* a = run >= r.n ? nullptr
+                     : src >= 0 ? r.dev[run] + (long long) src * r.per[run]
+                     : r.host[run] != nullptr ? r.host[run] + (long long) (pg + i) * r.per[run] : nullptr;
+    if (a != nullptr) {
+        const long long per = r.per[run];
+        uint8_t* b = r.dev[run] + (long long) (spare0 + i) * per;
+        for (long long k = (long long) blockIdx.x * blockDim.x + threadIdx.x; k < per; k += (long long) gridDim.x * blockDim.x)
+            b[k] = a[k];
+    }
+    const bool have = src >= 0 || r.host[0] != nullptr;
+    if (blockIdx.x == 0 && run == 0 && threadIdx.x == 0) branch_table[pg + i] = have ? spare0 + i : -1;
+}
+__global__ void branch_page_promote_kernel(BranchRuns r, const int32_t* __restrict__ main_table, int pg, int n_pg,
+                                           int spare0) {
+    const int i = blockIdx.y, run = blockIdx.z;
+    if (run >= r.n) return;
+    const long long per = r.per[run];
+    const uint8_t* a = r.dev[run] + (long long) (spare0 + i) * per;
+    const int dst = main_table[pg + i];
+    uint8_t* b = dst >= 0 ? r.dev[run] + (long long) dst * per : nullptr;
+    uint8_t* h = r.host[run] != nullptr ? r.host[run] + (long long) (pg + i) * per : nullptr;
+    for (long long k = (long long) blockIdx.x * blockDim.x + threadIdx.x; k < per; k += (long long) gridDim.x * blockDim.x) {
+        const uint8_t v = a[k];
+        if (b) b[k] = v;
+        if (h) h[k] = v;
+    }
+}
+
 // STRATA_MTP_TOP2=1 (diagnostic): each row's second-best id (the highest logit other than ids[row]; the lowest index on
 // a tie), and the selected row's to a mapped output beside mtp_select's
 __global__ void row_second_kernel(const float* __restrict__ logits, int n_vocab, const int32_t* __restrict__ ids,
@@ -672,6 +710,26 @@ void gather_rows(const uint8_t* src, int64_t row_bytes, const int32_t* ids, int6
     else
         gather_rows_kernel<<<48 * 8, 256, 0, s>>>(src, row_bytes, ids, n, dst);
     check("gather_rows");
+}
+
+void branch_pages_prep(uint8_t* const* dev, uint8_t* const* host, const long long* per, int n_runs,
+                       const int32_t* main_table, int32_t* branch_table, int pg, int n_pg, int spare0, void* stream) {
+    BranchRuns r{};
+    r.n = n_runs;
+    for (int i = 0; i < n_runs && i < 4; ++i) { r.dev[i] = dev[i]; r.host[i] = host ? host[i] : nullptr; r.per[i] = per[i]; }
+    branch_page_prep_kernel<<<dim3(16, (unsigned) n_pg, 4), 256, 0, (cudaStream_t) stream>>>(r, main_table, branch_table,
+                                                                                             pg, n_pg, spare0);
+    check("branch_pages_prep");
+}
+
+void branch_pages_promote(uint8_t* const* dev, uint8_t* const* host, const long long* per, int n_runs,
+                          const int32_t* main_table, int pg, int n_pg, int spare0, void* stream) {
+    BranchRuns r{};
+    r.n = n_runs;
+    for (int i = 0; i < n_runs && i < 4; ++i) { r.dev[i] = dev[i]; r.host[i] = host ? host[i] : nullptr; r.per[i] = per[i]; }
+    branch_page_promote_kernel<<<dim3(16, (unsigned) n_pg, (unsigned) n_runs), 256, 0, (cudaStream_t) stream>>>(
+        r, main_table, pg, n_pg, spare0);
+    check("branch_pages_promote");
 }
 
 void row_second(const float* logits, int n_rows, int n_vocab, const int32_t* ids, int32_t* out2, void* stream) {

@@ -40,6 +40,7 @@
 #include "strata/kernels/s2_expert_grouped.hpp"
 #include "strata/kernels/sampler.hpp"
 #include "strata/kernels/verify_kernels.hpp"
+#include "strata/kernels/kv_q8.hpp"
 #include "strata/kernels/elementwise.hpp"
 #include "strata/kernels/shared_expert.hpp"
 #include "strata/kernels/native_moe.hpp"
@@ -112,6 +113,101 @@
 #include <vector>
 
 namespace {
+
+// ============================ STRATA_BONUS_BRANCH (branch bonus-branch, in progress) ============================
+// The pipeline's speculative window B with a second branch B' beside it (the drafter's second choice for B's first
+// token) in the same stage-0 window, as slot rows: slot 0 the conversation, slot 1 its branch.  The branch's session
+// shares the conversation's GDN state (a window only reads it) and K/V pools; it has its own page table (the
+// window's pages copied into spare slots, qsa_set_kv_spare), indexer tail / pooled rows / block position and PLE
+// history, synced from the conversation before each branch window.
+bool bonus_branch_env() {
+    static const bool on = [] { const char* v = std::getenv("STRATA_BONUS_BRANCH"); return v && std::atoi(v) != 0; }();
+    return on;
+}
+struct BonusShadow {
+    strata::core::SessionState ss;
+    std::vector<int64_t> qj;   // the conversation's allocated QSA ordinals
+    int64_t synced = 0;        // pooled rows known equal to the conversation's
+    int64_t resident_cells = 0;   // a branch window must end below this (its pages resident in VRAM)
+};
+bool bonus_shadow_make(const strata::core::SessionState& src, const strata::core::ModelGeometry& g, BonusShadow& b, std::string& err) {
+    b.ss = src;
+    b.ss.qsa_states = new strata::core::QsaState[(size_t) g.n_qsa_layers()]();
+    for (int64_t j = 0; j < g.n_qsa_layers(); ++j) b.ss.qsa_states[j] = src.qsa_states[j];
+    const strata::kernels::QsaShapes s = strata::kernels::qsa_real_shapes();
+    const int64_t TS = (s.idx_block - 1) * g.idx_key_dim;
+    for (int64_t j = src.qsa_ord0; j < src.qsa_ord0 + src.qsa_alloc; ++j) {
+        const strata::core::QsaState& m = src.qsa_states[j];
+        strata::core::QsaState& q = b.ss.qsa_states[j];
+        if (!m.kv_int8 || m.kv_q4 || m.kv_hybrid || m.kv_elastic >= 0 || m.spare0 < 0 || m.n_spare < 2) {
+            err = "the branch needs --kv int8 K/V carved with two spare slots";
+            return false;
+        }
+        if (cudaMalloc((void**) &q.page_table, (size_t) m.n_pages * 4) != cudaSuccess ||
+            cudaMalloc((void**) &q.idx_tail, (size_t) TS * 4) != cudaSuccess ||
+            cudaMalloc((void**) &q.idx_pooled, (size_t) m.idx_pooled_rows * g.idx_key_dim * 4) != cudaSuccess ||
+            cudaMalloc((void**) &q.idx_block_pos, 16) != cudaSuccess) {
+            err = "the branch's indexer and page table do not fit";
+            return false;
+        }
+        cudaMemcpy(q.page_table, m.page_table, (size_t) m.n_pages * 4, cudaMemcpyDeviceToDevice);
+        q.host = strata::kernels::KvHostPools{};   // the branch never writes the streaming copy (its winner's commit does)
+        q.kv_mode = 0;   // and never pages blocks in: it reads the residency its table was copied with
+        q.owns_rope = false;
+        b.qj.push_back(j);
+        // below the selection's reach every row selects every block, so all of them are resident when the branch's
+        // table is copied (the previous window resolved them); beyond it the branch could select one that is not
+        const int64_t reach = (int64_t) s.idx_top_k * s.idx_block;
+        const int64_t cells = std::min<int64_t>(reach, m.kv_mode == 0 ? m.max_cells : m.n_slots * s.page_size);
+        b.resident_cells = b.resident_cells == 0 ? cells : std::min(b.resident_cells, cells);
+    }
+    if (src.ple_hist != nullptr) {
+        const size_t hb = (size_t) strata::kernels::NG_HIST * strata::kernels::NG_HC_DIM * 4;
+        if (cudaMalloc((void**) &b.ss.ple_hist, hb) != cudaSuccess) { err = "the branch's PLE history does not fit"; return false; }
+        b.ss.ple.hist = b.ss.ple_hist;
+    }
+    b.synced = 0;
+    return cudaDeviceSynchronize() == cudaSuccess || (err = "the branch's setup failed", false);
+}
+// Before a branch window at positions [p, p + T2) on `cs`: the branch's page table, its pages, indexer and history
+// from the conversation's as they are now (after the commit queued before it)
+bool bonus_shadow_sync(BonusShadow& b, const strata::core::SessionState& src, const strata::core::ModelGeometry& g, int64_t p,
+                       int T2, int64_t final_pos, cudaStream_t cs) {
+    const strata::kernels::QsaShapes s = strata::kernels::qsa_real_shapes();
+    const int64_t TS = (s.idx_block - 1) * g.idx_key_dim, ID = g.idx_key_dim;
+    const int64_t pg = p / s.page_size, n_pg = (p + T2 - 1) / s.page_size - pg + 1;
+    if (n_pg > 2) return false;
+    const long long cell_codes = (long long) g.n_head_kv * s.page_size * g.head_dim;
+    const long long cell_scales = (long long) g.n_head_kv * s.page_size * (g.head_dim / strata::kernels::KV_Q8_GROUP) * 2;
+    const int64_t rows_hi = std::min<int64_t>(src.qsa_states[b.qj[0]].idx_pooled_rows, (p + T2) / s.idx_block + 2);
+    for (const int64_t j : b.qj) {
+        const strata::core::QsaState& m = src.qsa_states[j];
+        strata::core::QsaState& q = b.ss.qsa_states[j];
+        if (cudaMemcpyAsync(q.page_table, m.page_table, (size_t) m.n_pages * 4, cudaMemcpyDeviceToDevice, cs) != cudaSuccess)
+            return false;
+        uint8_t* dev[4] = {(uint8_t*) m.k_q, (uint8_t*) m.v_q, (uint8_t*) m.k_scale, (uint8_t*) m.v_scale};
+        uint8_t* host[4] = {(uint8_t*) m.host.k_q, (uint8_t*) m.host.v_q, (uint8_t*) m.host.k_scale, (uint8_t*) m.host.v_scale};
+        const long long per[4] = {cell_codes, cell_codes, cell_scales, cell_scales};
+        strata::kernels::branch_pages_prep(dev, m.host.k_q ? host : nullptr, per, 4, m.page_table, q.page_table, (int) pg,
+                                           (int) n_pg, (int) m.spare0, cs);
+        if (cudaMemcpyAsync(q.idx_tail, m.idx_tail, (size_t) TS * 4, cudaMemcpyDeviceToDevice, cs) != cudaSuccess ||
+            cudaMemcpyAsync(q.idx_block_pos, m.idx_block_pos, 4, cudaMemcpyDeviceToDevice, cs) != cudaSuccess)
+            return false;
+        if (rows_hi > b.synced &&
+            cudaMemcpyAsync(q.idx_pooled + b.synced * ID, m.idx_pooled + b.synced * ID, (size_t) (rows_hi - b.synced) * ID * 4,
+                            cudaMemcpyDeviceToDevice, cs) != cudaSuccess)
+            return false;
+    }
+    if (b.ss.ple_hist != nullptr &&
+        cudaMemcpyAsync(b.ss.ple_hist, src.ple_hist, (size_t) strata::kernels::NG_HIST * strata::kernels::NG_HC_DIM * 4,
+                        cudaMemcpyDeviceToDevice, cs) != cudaSuccess)
+        return false;
+    // rows below the committed position's block are final; the rest is copied again next time
+    b.synced = std::max<int64_t>(0, std::min<int64_t>(final_pos / s.idx_block - 1, rows_hi));
+    b.ss.ple_prev[0] = src.ple_prev[0];
+    b.ss.ple_prev[1] = src.ple_prev[1];
+    return true;
+}
 // Windows' WDDM driver model: native Windows, or WSL2 (its GPU goes through /dev/dxg to the Windows driver).  There,
 // pinning a large arena into two CUDA contexts leaves WDDM refusing every later allocation (the 5080 + 3090 rig);
 // a Linux driver has no such limit (#253: the 8 GiB cap cost a 4090 + 3060 split 3x of its prompt speed).
@@ -2083,6 +2179,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     strata::core::qsa_set_kv_resident(o.kv_resident);
+    if (bonus_branch_env() && o.pipeline_windows >= 2) strata::core::qsa_set_kv_spare(2);   // STRATA_BONUS_BRANCH
     // Prompt lookup (the suffix drafter, on by default): the MTP keeps its --spec windows and a lookup window may be
     // up to 2 tokens longer; the draft policy (strata/spec/draft_policy.hpp) takes one only where it pays. Code
     // edits +6-11%, ordinary text unchanged (bench/results/2026-09-27-spec). --suffix-draft 0 turns it off.
@@ -6020,6 +6117,7 @@ int main(int argc, char** argv) {
         // for the odd ones, sharing one stream of their card, and a hand-off per parity - so stage 0 can run window
         // K+1 while stage 1 still reads window K's hand-off
         const bool pipe = o.pipeline_windows > 0 && n_stages == 2 && !split_same && stages.size() == 1;
+        float* pl_hand_host[2] = {nullptr, nullptr};   // the host side of stage 0's two hand-offs (STRATA_BONUS_BRANCH)
         strata::core::Verifier ver_b;
         SplitDrive split_drive_b;
         cudaStream_t pl_stream[2] = {nullptr, nullptr};
@@ -6051,6 +6149,7 @@ int main(int argc, char** argv) {
                     return 1;
                 }
                 std::memset(hh, 0, hb);
+                if (pl_hand_host[0] == nullptr) pl_hand_host[0] = hh;   // stage 0's (the even windows')
             }
             split_drive.base = &drive;
             split_drive.n = n_stages;
@@ -6111,6 +6210,7 @@ int main(int argc, char** argv) {
                 return 1;
             }
             std::memset(hh, 0, hb);
+            pl_hand_host[1] = hh;
             GpuStage& gs = *stages[0];
             ver_b.set_stage(0, split_at[0], nullptr, hand_b);
             gs.ver_b.set_stage(split_at[0], -1, hand_b, nullptr);
@@ -6135,7 +6235,8 @@ int main(int argc, char** argv) {
                     return 1;
                 }
             }
-            if (!ver_b.init(wt, g, ss, vh, native_head.loaded() ? &native_head : nullptr, o.spec, err)) {
+            if (!ver_b.init(wt, g, ss, vh, native_head.loaded() ? &native_head : nullptr,
+                            std::min(strata::kernels::kVerifyMaxT, o.spec + (bonus_branch_env() ? 2 : 0)), err)) {
                 std::fprintf(stderr, "strata serve: --pipeline-windows: the second verifier on CUDA0 (the first card): "
                                      "%s (raise --vram-reserve-mib by ~200, or --pipeline-windows 0)\n", err.c_str());
                 return 1;
@@ -6145,13 +6246,30 @@ int main(int argc, char** argv) {
         ver.set_remote_expert_opt(remote_opt.get());
         if (batch_mtp) ver.set_batch_graph_limit(64);   // --batch-mtp only: slot rotation makes many layouts (LRU); 0.1.39 keeps all
         if (!ver.init(wt, g, ss, vh, native_head.loaded() ? &native_head : nullptr,
-                      batch_mtp ? strata::kernels::kVerifyMaxT : std::max(o.spec, o.batch), err) ||
+                      batch_mtp ? strata::kernels::kVerifyMaxT
+                                : std::min(strata::kernels::kVerifyMaxT,
+                                           std::max(o.spec, o.batch) + (pipe && bonus_branch_env() ? 2 : 0)), err) ||
             (use_mtp && !mtp.bind(last_st ? last_st->wt : wt, last_st ? &last_st->head : &native_head,
                                   pipe ? pl_mtp_R : ver.final_R_all(), err))) {
             std::fprintf(stderr, "strata serve: %s\n", err.c_str());
             return 1;
         }
         if (pipe) mtp.set_source_R(ver.final_R_all());   // the serial decode's rows (the last stage's even verifier)
+        // STRATA_BONUS_BRANCH: the branch's session, the slots of both stage-0 verifiers {conversation, branch}
+        static BonusShadow bonus;
+        bool bonus_ok = false;
+        if (pipe && bonus_branch_env()) {
+            const strata::core::OnDevice on0(ver.device());
+            std::string e;
+            if (!bonus_shadow_make(ss, g, bonus, e) || !ver.init_slots({&ss, &bonus.ss}, e) ||
+                !ver_b.init_slots({&ss, &bonus.ss}, e))
+                std::fprintf(stderr, "strata serve: STRATA_BONUS_BRANCH is off: %s\n", e.c_str());
+            else {
+                bonus_ok = true;
+                std::fprintf(stderr, "strata serve: STRATA_BONUS_BRANCH: the branch's session is ready (windows below %lld "
+                                     "cells)\n", (long long) bonus.resident_cells);
+            }
+        }
         auto free_slot_mtp_rows = [](float* p) { if (p != nullptr) (void) cudaFree(p); };
         std::vector<std::unique_ptr<float, decltype(free_slot_mtp_rows)>> slot_mtp_rows;
         if (batch_mtp) {
@@ -9106,6 +9224,8 @@ int main(int argc, char** argv) {
                     bool spec = false;     // launched speculatively (behind the window before, ahead of its verdict)
                     bool made = false;     // made from a chain (its outcome can be scored even when the gate held it)
                     bool sfx = false;      // a lookup window (the suffix drafter's drafts)
+                    bool br = false;       // STRATA_BONUS_BRANCH: launched as slot rows with a branch (slot 1)
+                    int T2 = 0;            //   the branch's rows
                     int32_t alt = -1;      // STRATA_MTP_TOP2 (diagnostic): the drafter's second choice for tok[0]
                     float p1 = 0.0f;       //   and the drafter's probability of tok[0]
                     int sfx_match = 0;
@@ -9142,6 +9262,55 @@ int main(int argc, char** argv) {
                 int64_t pl_spec = 0, pl_on = 0, pl_undo = 0, pl_gate = 0, pl_fm = 0;
                 std::vector<int32_t> outp(8, 0);
                 bool ending = false;
+                // STRATA_BONUS_BRANCH: stage 0's commits of a slot-row window are its group's (slot 0); B launched with
+                // its branch beside it (STRATA_BONUS_ROWS rows: the second choice, then B's first draft)
+                static const int bonus_rows = [] {
+                    const char* v = std::getenv("STRATA_BONUS_ROWS");
+                    // 0: set up, never launched; -1: B alone through the slot-row path (A/B tests)
+                    return v ? std::max(-1, std::min(2, std::atoi(v))) : 1;
+                }();
+                const int bonus_max_t = std::min(strata::kernels::kVerifyMaxT, o.spec + 2);
+                // STRATA_BONUS_TEST=dup: the branch is a copy of B; on stage 0's finish both groups' hand-off rows are
+                // compared (they must be equal bit for bit)
+                static const bool bonus_dup = [] { const char* v = std::getenv("STRATA_BONUS_TEST"); return v && std::string(v) == "dup"; }();
+                int64_t bonus_dup_n = 0, bonus_dup_bad = 0;
+                const int64_t bonus_hb = strata::core::Verifier::handoff_floats(g);
+                auto commit0 = [&](const PW& w, int keep) -> bool {
+                    return w.br ? V0(w).pl_commit_group(0, keep, err) : V0(w).pl_commit_async(keep, err);
+                };
+                auto launch_b = [&]() -> bool {
+                    // the branch's rows stay in the page of B's first row (the next page may not be resident yet)
+                    const int ps = (int) strata::kernels::qsa_real_shapes().page_size;
+                    const int T2 = std::max(0, std::min<int>(bonus_rows, ps - (int) (B.p % ps)));
+                    if (!bonus_ok || bonus_rows == 0 || B.T + T2 > bonus_max_t || B.p + B.T + 8 > bonus.resident_cells)
+                        return V0(B).pl_launch(B.T, B.tok, B.p, err);
+                    int rows[8];
+                    int32_t toks[8];
+                    int64_t pos[8];
+                    for (int i = 0; i < B.T; ++i) { rows[i] = 0; toks[i] = B.tok[i]; pos[i] = B.p + i; }
+                    const int32_t alt = B.alt >= 0 ? B.alt : B.tok[0];
+                    if (bonus_dup) {   // the branch a copy of B: its hand-off rows must equal B's bit for bit
+                        if (B.T > T2 || 2 * B.T > bonus_max_t) return V0(B).pl_launch(B.T, B.tok, B.p, err);
+                    }
+                    const int TB = bonus_dup ? B.T : T2;
+                    for (int i = 0; i < TB; ++i) {
+                        rows[B.T + i] = 1;
+                        toks[B.T + i] = bonus_dup ? B.tok[i] : i == 0 ? alt : (B.T > 1 ? B.tok[1] : alt);
+                        pos[B.T + i] = B.p + i;
+                    }
+                    if (T2 > 0) {
+                        const strata::core::OnDevice on(dev0);
+                        if (!bonus_shadow_sync(bonus, ss, g, B.p, T2, A.p, s0)) {
+                            err = "the branch's sync failed";
+                            return false;
+                        }
+                    }
+                    const int TB2 = bonus_dup ? B.T : T2;
+                    if (!V0(B).pl_launch_rows(rows, B.T + TB2, toks, pos, err)) return false;
+                    B.br = true;
+                    B.T2 = TB2;
+                    return true;
+                };
                 A.T = 1;
                 A.p = p;
                 A.tok[0] = x;
@@ -9394,7 +9563,7 @@ int main(int argc, char** argv) {
                         }
                         ss.ple_prev[0] = undo_ple[0];
                         ss.ple_prev[1] = undo_ple[1];
-                        if (!V0(undo_w).pl_commit_async(undo_keep, err)) return die(err);
+                        if (!commit0(undo_w, undo_keep)) return die(err);
                         doomed = false;
                         ++pl_undo;
                         tre("U", undo_w.seq, undo_keep);
@@ -9503,8 +9672,7 @@ int main(int argc, char** argv) {
                             }
                             undo_ple[0] = ss.ple_prev[0];
                             undo_ple[1] = ss.ple_prev[1];
-                            if (!V0(A).pl_commit_async(A.T, err) || !snap_take(B.seq) ||
-                                !V0(B).pl_launch(B.T, B.tok, B.p, err))
+                            if (!commit0(A, A.T) || !snap_take(B.seq) || !launch_b())
                                 return die(err.empty() ? std::string("the GDN snapshot failed") : err);
                             A.committed = true;
                             B.launched = true;
@@ -9518,6 +9686,12 @@ int main(int argc, char** argv) {
                     }
                     // ---- stage 1: A, once its stage 0 is done
                     if (A.finished && !A.s1) {
+                        if (bonus_dup && A.br && pl_hand_host[A.seq & 1] != nullptr) {
+                            const float* h = pl_hand_host[A.seq & 1];
+                            ++bonus_dup_n;
+                            if (std::memcmp(h, h + (size_t) A.T * bonus_hb, (size_t) A.T * bonus_hb * 4) != 0)
+                                ++bonus_dup_bad;
+                        }
                         if (chain_kind == 1 && !B.ready) ++pl_late;   // stage 0 idles until the chain has B
                         if (!V1(A).pl_launch(A.T, A.tok, A.p, err)) return die(err);
                         A.s1 = true;
@@ -9613,7 +9787,7 @@ int main(int argc, char** argv) {
                             undo_w = A;
                             undo_keep = a + 1;
                         } else if (!A.committed) {
-                            if (!V0(A).pl_commit_async(a + 1, err)) return die(err);
+                            if (!commit0(A, a + 1)) return die(err);
                         }
                         // B is D now (or dropped): never pump it twice (whichever copy saw the window complete first
                         // would finish it, and the other would wait for it forever)
@@ -9672,6 +9846,10 @@ int main(int argc, char** argv) {
                                  cls_n[0], avg(cls_ms[0], cls_n[0]), avg(cls_tok[0], cls_n[0]), cls_n[1],
                                  avg(cls_ms[1], cls_n[1]), avg(cls_tok[1], cls_n[1]), (long long) pl_disagree,
                                  (long long) pl_late);
+                    if (bonus_dup)
+                        std::fprintf(stderr, "strata pipeline STRATA_BONUS_TEST=dup: %lld branch windows, %lld with the "
+                                             "branch's hand-off rows unequal to B's\n",
+                                     (long long) bonus_dup_n, (long long) bonus_dup_bad);
                     if (pl_bonus_wrong > 0)
                         std::fprintf(stderr, "strata pipeline bonus: %lld whole windows with a wrong bonus guess, the "
                                              "drafter's second choice right in %lld\n",

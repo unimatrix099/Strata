@@ -236,6 +236,10 @@ struct QsaState {
     /// pages at `block % n_slots`, with the host copy for a resume. The pool pointers above point at the slots.
     int kv_mode = 0;
     int64_t n_slots = 0;
+    /// STRATA_BONUS_BRANCH (qsa_set_kv_spare): the first of `n_spare` VRAM page slots past `n_slots` that no page
+    /// table or residency map uses - a branch window's own copies of the pages it writes (-1: none)
+    int64_t spare0 = -1;
+    int64_t n_spare = 0;
     /// The elastic K/V (qsa_set_kv_elastic): this state's pools are in a VMM range mapped only as far as the
     /// context needs - its index in layer.cpp's registry; -1: carved from the arena as before.
     int32_t kv_elastic = -1;
@@ -282,6 +286,9 @@ uint64_t qsa_state_bytes(const ModelGeometry& g, int64_t max_cells, bool with_ro
 /// Also puts the MTP drafter's K/V in a ring of its window (`ring_cells` of qsa_state_bytes/init; -1 forces a fully
 /// resident state).
 void qsa_set_kv_resident(int64_t cells);
+/// STRATA_BONUS_BRANCH: `n` extra VRAM page slots per main-layer K/V state (QsaState::spare0), set before the
+/// session is carved; 0 (the default) carves none.
+void qsa_set_kv_spare(int n);
 /// THE ELASTIC K/V (--kv-grow; vmm.hpp).  A mode-0 state's K/V pools get addresses for every cell of the context but
 /// physical memory only for the first `init_cells`; `qsa_kv_elastic_grow` maps more as the context grows (from
 /// chunks the expert cache gives up) and `qsa_kv_elastic_shrink` hands them back.  The addresses never move, so the

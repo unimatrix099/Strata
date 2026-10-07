@@ -515,6 +515,7 @@ struct Cursor {    uint8_t* p;    uint64_t used = 0;    template <typename T>   
 namespace {
 // KV streaming (docs/kv-streaming-design.md): 0 keeps every cell in VRAM.
 int64_t g_kv_resident = 0;
+int g_kv_spare = 0;   // qsa_set_kv_spare
 uint64_t g_kv_host_bytes = 0;
 
 // ---- the elastic K/V (--kv-grow): one VMM range per state, each pool array at a chunk boundary in it
@@ -663,6 +664,7 @@ uint64_t kv_pool_bytes(const QsaShapes& s, int64_t pages, bool hybrid, bool int8
 }  // namespace
 
 void qsa_set_kv_resident(int64_t cells) { g_kv_resident = cells > 0 ? cells : 0; }
+void qsa_set_kv_spare(int n) { g_kv_spare = n > 0 ? n : 0; }
 int64_t qsa_kv_resident() { return g_kv_resident; }
 int64_t qsa_kv_resident_min() { return 20480; }
 uint64_t qsa_kv_host_bytes() { return g_kv_host_bytes; }
@@ -672,7 +674,7 @@ uint64_t qsa_state_bytes(const ModelGeometry& g, int64_t max_cells, bool with_ro
     const KvPlan p = kv_plan(s, max_cells, ring_cells);
     uint64_t n = 0;
     if (!(g_kv_elastic && p.mode == 0))   // the elastic K/V's pools are in their own VMM range
-        n += kv_pool_bytes(s, p.slots, g_kv_hybrid && ring_cells <= 0,
+        n += kv_pool_bytes(s, p.slots + (ring_cells <= 0 ? g_kv_spare : 0), g_kv_hybrid && ring_cells <= 0,
                            g_kv_int8 || g_kv_hybrid) + 4 * 16;   // K/V pools (the VRAM slots)
     n += (uint64_t) p.pages * 4;                                               // page_table
     if (p.mode == 1) n += strata::kernels::kv_stream_map_bytes(p.slots) + 6 * 16;   // the residency map
@@ -704,7 +706,11 @@ uint64_t qsa_state_init(const ModelGeometry& g, int64_t max_cells, void* base, Q
     st.kv_rot = st.kv_q4 || (st.kv_int8 && g_kv_int8_rot);   // K8V4 rotates only V (below)
     st.kv_mode = p.mode;
     st.n_slots = p.slots;
-    const uint64_t rows = (uint64_t) p.slots * s.n_head_kv * s.page_size;   // VRAM rows: the slots
+    // STRATA_BONUS_BRANCH: spare slots past the managed ones (main layers, carved pools only)
+    const int64_t spare = (ring_cells <= 0 && !(g_kv_elastic && p.mode == 0)) ? g_kv_spare : 0;
+    st.spare0 = spare > 0 ? p.slots : -1;
+    st.n_spare = spare;
+    const uint64_t rows = (uint64_t) (p.slots + spare) * s.n_head_kv * s.page_size;   // VRAM rows: the slots
     const uint64_t q4_row = strata::kernels::kv_q4_bytes_per_head((int) s.head_dim);
     st.kv_elastic = -1;
     if (g_kv_elastic && p.mode == 0) {
