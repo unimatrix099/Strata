@@ -9107,6 +9107,7 @@ int main(int argc, char** argv) {
                     bool made = false;     // made from a chain (its outcome can be scored even when the gate held it)
                     bool sfx = false;      // a lookup window (the suffix drafter's drafts)
                     int32_t alt = -1;      // STRATA_MTP_TOP2 (diagnostic): the drafter's second choice for tok[0]
+                    float p1 = 0.0f;       //   and the drafter's probability of tok[0]
                     int sfx_match = 0;
                 };
                 auto V0 = [&](const PW& w) -> strata::core::Verifier& { return *PV[0][w.seq & 1]; };
@@ -9208,6 +9209,7 @@ int main(int argc, char** argv) {
                     B.p = A.p + A.T;
                     B.tok[0] = oc[base];
                     B.alt = oc == mtp.chain_tok() && mtp.chain_tok2()[base] != 0 ? mtp.chain_tok2()[base] : -1;
+                    B.p1 = op[base];
                     B.T = t_rule(op, base + 1, avail);
                     for (int i = 1; i < B.T; ++i) {
                         B.tok[i] = oc[base + i];
@@ -9552,6 +9554,18 @@ int main(int argc, char** argv) {
                     else if (stop_req.load()) finish = "cancel";
                     const bool last = eos || produced_n >= max_new || stop_req.load();
                     const bool on = B.launched && a == A.T - 1 && B.tok[0] == outp[(size_t) A.T - 1];
+                    // STRATA_MTP_TOP2_LOG=<file>: one line per whole window with a bonus guess: p1, the A window's
+                    // gate estimate p_on, bonus right, second choice right, B's rows
+                    static FILE* top2_log = [] {
+                        const char* f = std::getenv("STRATA_MTP_TOP2_LOG");
+                        return f ? std::fopen(f, "a") : nullptr;
+                    }();
+                    if (top2_log && B.made && a == A.T - 1) {
+                        const int32_t real = outp[(size_t) A.T - 1];
+                        std::fprintf(top2_log, "%.4f %.4f %d %d %d\n", B.p1, B.p_on, B.tok[0] == real ? 1 : 0,
+                                     B.alt == real ? 1 : 0, B.T);
+                        std::fflush(top2_log);
+                    }
                     if (B.made && a == A.T - 1 && B.tok[0] != outp[(size_t) A.T - 1]) {
                         ++pl_bonus_wrong;
                         if (B.alt >= 0 && B.alt == outp[(size_t) A.T - 1]) ++pl_bonus_alt;
