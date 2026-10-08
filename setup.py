@@ -4316,8 +4316,8 @@ def parallel_note(asked: int | None, vram_gbs, arena_gb: float, ctx: int, kv: st
         # once then add speed in all, not only less waiting
         return [f"Several requests at once (opt-in): --parallel 8 runs up to 8 together, flowing through the "
                 f"{len(vram_gbs)} cards as a pipeline (each takes ~{slot:.1f} GB of VRAM from the expert cache). "
-                "Measured on 2x RX 7900 XTX (IQ3_XXS): 2 / 4 / 8 at once 70 / 105 / 150 tok/s in all against ~71 one "
-                "after the other, the 8th answer starting after 6 s instead of 51 s; a request alone ~5% slower "
+                "Measured on 2x RX 7900 XTX (IQ3_XXS): 2 / 4 / 8 at once 89 / 133 / 180 tok/s in all against ~71 one "
+                "after the other, the 8th answer starting after 5 s instead of 51 s; a request alone ~5% slower "
                 "(docs/BATCHING.md)."]
     if asked is None or asked <= 1:
         if not rec:
