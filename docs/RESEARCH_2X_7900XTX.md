@@ -36,9 +36,9 @@ One conversation on both cards (IQ3_XXS, decode, tok/s):
   gain in the installed config: the reserve per card (`--vram-reserve-mib 700 --vram-reserve-later-mib 3072`).
 
 Several conversations at once (`"parallel"` slots, total tok/s): 4 at once 73.4 -> 133.0 (**+81%**), 8 at once
-70.9 -> 185.8 (**+162%**).
+70.9 -> 185.8 (**+162%**); since the rebase (08 Oct) with upstream's own batching: 133.5 and 179.6.
 
-Fixed: `STRATA_QFUSE=1` with `"parallel"` slots gave garbage text (the installed engine has the fix).
+Fixed: `STRATA_QFUSE=1` with `"parallel"` slots gave garbage text (upstream's fix #1139 since the rebase).
 
 Tried, not kept: a later layer split, upstream's other gfx1151 switches, the resident head kernel,
 `HIP_FORCE_DEV_KERNARG`, and the second branch for the bonus token (built lossless on branch `bonus-branch`, no gain).
@@ -199,7 +199,19 @@ new draft model.
   would need a second drafter chain, ready only after B could launch - B waits on every branched window. Not worth
   more work on this PC. The branch also works only below the attention selection's reach (8,192 cells).
 - Found on the way: `STRATA_QFUSE=1` with batch windows (`"parallel"` slots) read a stale q8_1 image in the GDN
-  layers (garbage text); fixed on this branch too.
+  layers (garbage text); upstream fixed the same (#1139), which the fork now uses.
+
+## 9. Rebased onto upstream's main (08 Oct)
+
+393 new upstream commits. Kept: the asynchronous commit, the early launch and its fixes, the pipeline's `go`, the
+merged combine, setup's note, the diagnostic and the docs. Dropped as duplicates of upstream's own work: the batch
+groups without pad rows, the server's groups and slot choice, their review fixes, the `STRATA_QFUSE` batch fix.
+Checks with the rebased build: the same text as the engine before the rebase (pipelined and serial, exact
+settings), our serial-path changes exact (the same text with them off), story + code 89.5 tok/s; eight prompts
+105-108 tok/s against 104-108 (five pairs); `"parallel": 8` with upstream's batching 71.1 / 89.3 / 133.5 / 179.6
+tok/s at 1 / 2 / 4 / 8 requests (ours: 72.1 / 88.7 / 133.0 / 185.8); `smoke.py` 7 of 7; `batch_test.py` the same
+slots equal to solo as before. Pipelined and serial windows write different texts here with both engines
+(upstream's behaviour). The fork's page: [FORK.md](../FORK.md).
 - **MTP drafts in batch slots:** a conversation in a slot decodes one token per window (20-40 tok/s) against ~2 with
   drafts alone (~78 tok/s); the largest lever for a request that shares the cards.
 - **Prelaunching the pipeline's graphs** (as the split does for one conversation): small here, the launches are 0.9 /

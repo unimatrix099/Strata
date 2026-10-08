@@ -186,7 +186,9 @@ through the HTTP server, 512 greedy tokens per answer with thinking on, total to
 | 8 | 70.9 | 150.5 | 51.1 s / 5.8 s |
 
 Before the groups' pad rows were dropped, the same slots gave 39.0 / 74.1 / 148.1 tok/s at 2 / 4 / 8 (an idle slot
-cost a token's experts on every card), and without `--batch-groups` 48.7 / 70.0 / 97.0. A request alone is ~5%
+cost a token's experts on every card), and without `--batch-groups` 48.7 / 70.0 / 97.0. On upstream's main of 08 Oct
+(its own groups and slot choice, `--batch-groups auto`, `--pipeline-windows 2` in the config): 71.1 / 89.3 / 133.5 /
+179.6 tok/s at 1 / 2 / 4 / 8 (FORK.md). A request alone is ~5%
 slower (the slots' VRAM comes out of the expert cache: 75% of the experts resident instead of 83%).
 
 ## Together with conversation parking
