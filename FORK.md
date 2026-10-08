@@ -16,6 +16,7 @@ Every number here was measured on that PC. The full record, with every try and t
 | card 2's window graph launched early, from a worker thread (`STRATA_SPLIT_EARLY_LAUNCH=0` turns it off) | `0419d49`, `a1d9116` | +29% decode without the pipeline, ~0 with it |
 | upstream's `--pipeline-windows 2` raises card 2's `go` before its launch (without it a pipelined window timed out with the early launch) | `ef8af0c` | needed for the pipeline |
 | the CPU's expert rows, the GPU's and the combine in one kernel (bit-exact; `STRATA_COMBINE_GATHER=0` turns it off) | `c45a551` | ~+0.5% |
+| the pipelined draft chain's stream at the highest priority on ROCm too (before, it could share a hardware queue with card 2's windows) | `3e1b02c` | half the engine starts were ~10% slower (81-82 instead of 89-91 tok/s); now 6 of 6 fast |
 | setup: on several cards the `"parallel"` note gives the measured trade-off | `bc94d9d` | - |
 | `STRATA_MTP_TOP2=1`: a diagnostic, how often the drafter's second choice is the token a pipelined window missed (off by default) | `1ad25e4` | - |
 
@@ -61,6 +62,7 @@ The engine is `engine/strata`, built from `main` (below). Measured on 08 Oct wit
 | 07 Oct | card 2 profiled, `STRATA_QFUSE`, upstream's gfx1151 switches, layer split, VRAM reserve per card, online research | small or no gains |
 | 07 Oct | a second branch for the drafter's second choice, built to a lossless rescue (branch `bonus-branch`) | no gain on this PC |
 | 08 Oct | rebased onto upstream's `main` (393 new commits); duplicates of upstream's own work dropped | same text, same speed |
+| 08 Oct | the drafter's stream priority on ROCm (found while preparing `pr/two-gpu-split`) | no more slow engine starts |
 
 ## Bringing in upstream's changes
 
@@ -95,6 +97,9 @@ differences, easier merges.
 ## Branches
 
 - `main`: production (this page).
+- `pr/two-gpu-split`: upstream's `main` plus only the measured improvements (the hand-over changes, the drafter's
+  priority, setup's note, a doc section), for a pull request to upstream; two cards without the pipeline 54.8 ->
+  74.5 tok/s (+36%) on its base.
 - `bonus-branch`: the second-branch experiment (`STRATA_BONUS_BRANCH=1`), lossless, no gain; kept for reference.
 - `amd-7900xtx-port`, `split-decode-speed`, `multi-agent-batch`, `hip-rocm79-alignas-fix`: earlier stages of the
   work, superseded by `main`; `old-main-2026-10-04`: the fork's `main` before 08 Oct (an old copy of upstream).
