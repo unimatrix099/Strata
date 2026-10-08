@@ -203,6 +203,30 @@ The Coder on an RTX 5080 + RTX 3090 (Ryzen 9 9950X3D), 32K context; details in
   3090 pair slower (68 / 90 tok/s decode): every extra card costs its own round per window.
 - More cards pay off when the model's routed experts do not fit the faster ones.
 
+## The cards' hand-over (on by default)
+
+On a split each verify window passes from card to card, and three things keep a card from waiting longer than it
+must:
+
+- **The commit does not wait.** A window's commit is queued without a host sync on a multi-GPU split
+  (`STRATA_SPLIT_COMMIT_SYNC=1`: the old synchronous commit).
+- **The later card's window is launched early.** A worker thread launches the next card's window graph while the
+  card before it still runs; the graph waits on the device for the hand-off (`STRATA_SPLIT_EARLY_LAUNCH=0`: launched
+  after the previous card finishes). On AMD this also keeps the waiting card's clock up: an idle gap lets RDNA3 drop
+  its shader clock.
+- **The CPU's expert rows, the GPU's and the combine run as one kernel** (bit for bit the three kernels;
+  `STRATA_COMBINE_GATHER=0`: separate).
+
+Measured on 2x RX 7900 XTX (PCIe 3.0 x8, Ryzen 9 5950X, IQ3_XXS, 128K context, `--spec 3`, greedy story + code,
+`STRATA_IQ_MT_MIN=1 --pcie-frac 0 --adapt-every 0` so the text is the same in every run): **54.8 -> 74.5 tok/s
+(+36%)** without `--pipeline-windows` (three runs each: 54.95 / 54.7 / 54.75 against 74.6 / 74.65 / 74.1; the commit
++3.7%, the early launch +28%, the combine +1.9%). With `--pipeline-windows 2` the cards overlap already and the three
+change nothing measurable (89.1 against 89.9).
+
+With `--pipeline-windows 2` the drafter's chain on the last card has the highest stream priority on ROCm as on CUDA:
+with the default priority the runtime could put it on the same hardware queue as that card's windows, and half the
+engine starts then decoded ~10% slower (81-82 instead of 89-91 tok/s on the same PC).
+
 ## One conversation with both cards busy (`--pipeline-windows`, opt-in)
 
 With a split the cards take turns on a verify window: the first card runs its layers and hands off, then waits while
