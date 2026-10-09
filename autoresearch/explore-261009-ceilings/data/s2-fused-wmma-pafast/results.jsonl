@@ -1,0 +1,2 @@
+{"test": "speed", "name": "16k", "prompt_n": 16341, "prompt_tps": 2096.9, "ttft_s": 7.8, "decode_n": 119, "decode_tps": 93.2, "deg": {"chars": 706, "words": 91, "comp_min": 0.615, "comp_med": 0.615, "rep8_max": 1, "tail_loop": "", "bad_char_frac": 0.0, "cjk_frac": 0.0, "bad": false, "why": []}, "label": "s2-fused-wmma-pafast", "at": "18:14:05"}
+{"test": "system", "name": "ram", "mem_available_min_gib": 76.1, "label": "s2-fused-wmma-pafast", "at": "18:14:06"}

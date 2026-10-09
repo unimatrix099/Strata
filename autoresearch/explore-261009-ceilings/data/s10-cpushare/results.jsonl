@@ -1,0 +1,3 @@
+{"test": "speed", "name": "1k", "prompt_n": 997, "prompt_tps": 581.3, "ttft_s": 1.7, "decode_n": 116, "decode_tps": 93.2, "deg": {"chars": 683, "words": 89, "comp_min": 0.605, "comp_med": 0.605, "rep8_max": 1, "tail_loop": "", "bad_char_frac": 0.0, "cjk_frac": 0.0, "bad": false, "why": []}, "label": "s10-cpushare", "at": "18:40:34"}
+{"test": "speed", "name": "2k", "prompt_n": 1782, "prompt_tps": 863.5, "ttft_s": 2.1, "decode_n": 116, "decode_tps": 98.5, "deg": {"chars": 646, "words": 94, "comp_min": 0.611, "comp_med": 0.611, "rep8_max": 1, "tail_loop": "", "bad_char_frac": 0.0, "cjk_frac": 0.0, "bad": false, "why": []}, "label": "s10-cpushare", "at": "18:40:37"}
+{"test": "system", "name": "ram", "mem_available_min_gib": 75.8, "label": "s10-cpushare", "at": "18:40:38"}

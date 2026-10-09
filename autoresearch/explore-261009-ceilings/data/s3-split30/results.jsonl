@@ -1,0 +1,2 @@
+{"test": "speed", "name": "32k", "prompt_n": 30729, "prompt_tps": 2206.8, "ttft_s": 13.9, "decode_n": 120, "decode_tps": 83.2, "deg": {"chars": 696, "words": 91, "comp_min": 0.601, "comp_med": 0.601, "rep8_max": 1, "tail_loop": "", "bad_char_frac": 0.0, "cjk_frac": 0.0, "bad": false, "why": []}, "label": "s3-split30", "at": "18:20:33"}
+{"test": "system", "name": "ram", "mem_available_min_gib": 76.1, "label": "s3-split30", "at": "18:20:34"}

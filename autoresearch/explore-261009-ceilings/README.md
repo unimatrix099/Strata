@@ -4,6 +4,22 @@ The PC: 2x RX 7900 XTX (gfx1100, 96 CUs, 24 GB each; one drives the desktop), Ry
 cards on PCIe 3.0 x8; the fork's production `main` with IQ3_XXS, 128K context, the tuned pipeline. Measured today:
 decode 97-108 tok/s (17 ms per window, 1.85 tokens per window), prompt reading 1,100-1,460 tok/s.
 
+## What the loop kept (09 Oct, short tests; each adopted after a quality check)
+
+| change | prompt reading before -> after | where it pays |
+|---|---|---|
+| `STRATA_PF_FUSED=1` (upstream's fused expert kernels on the prompt path) | 32K 1,438 -> 2,057 tok/s; 118K 1,119 -> 2,787 | every prompt from 1,024 tokens |
+| `STRATA_HIP_WMMA=1` (the prompt attention on the matrix cores) | 16K 1,685 -> 2,025; 32K -> 2,654-2,726; 118K -> 3,368 | long prompts (attention's share 24% -> 6-10%) |
+| `STRATA_PREFILL_CPU_SHARE=1` (the CPU computes a short chunk's non-resident experts instead of streaming them) | 1K 500-538 -> 583-611; 2K 845-852 -> 864-910 | agent turns (reads under ~3K tokens) |
+
+In all: a 1K prompt's first token 2.0 -> 1.7 s, 32K 21-27 -> ~12 s, 118K 101-108 -> 36 s; decode unchanged
+(the loop found no cheap decode lever: see section 6). None of the three is bit-identical with the default path; the
+quality suite (section 7 of the long-context README) passed with the first, a shorter check with the second and third.
+Tried and dropped: device-planned layers under the pipeline, the idle card's prompt helper (never engages here),
+`STRATA_HC_Q8` (inert on this GGUF), `STRATA_PF_GEMM`, `STRATA_PF_PAD`, `STRATA_HC_UPMIX`, `STRATA_SELECT_WMMA`,
+`STRATA_PREFILL_STREAM_MIN=128`, 16K chunks (-13%), a smaller reserve on the desktop card, a later layer split (prompts
++5.6%, decode -1-7%). `STRATA_PA_FAST=1` (+3-4% on top, another rounding change) waits for its quality check.
+
 ## 1. The hardware ceilings (measured, `gpu_bw.cpp`, `cpu_bw.cpp`, `gemm_tflops.cpp`)
 
 | path | measured | spec |
@@ -122,13 +138,30 @@ PCIe for a chunk too short to hide them - then card 1 waits 0.87 s for card 2 (t
 on a one-chunk prompt; card 2 streams ~22% of its experts, ~4 GB, ~0.6 s). So short prompts are PCIe-bound: more
 resident experts on card 2 (step 7) and the idle card's help are the levers. `STRATA_PREFILL_HELP=1` (step 6, `data/s6-*`):
 500 / 850 / 1,230 tok/s at 1K / 2K / 4K with and without it, and no helper line in the log - upstream documents it as
-unavailable with the fused prompt kernels, which the config has on; step 8 measures it with the fused path off.
+unavailable with the fused prompt kernels, which the config has on; step 8 measured it with the fused path off (`data/s8-*`): 501 / 727 / 1,026 tok/s without, 497 / 710 / 1,027 with,
+and still no helper line - it does not engage on this setup (perhaps `--remote-expert-opt`); dropped. The same runs
+show the fused path's own gain on short prompts: 2K 727 -> 851 tok/s, 4K 1,026 -> 1,231 (+17-20%); at 1K both paths
+are the plain MMQ one (the fused kernels start at 1,024 tokens).
+
+Step 10 (`data/s10-*`, 1K / 2K prompts on the production path): **`STRATA_PREFILL_CPU_SHARE=1`** (upstream's CPU share
+of a small chunk's experts, on by default only on one-GPU CUDA) 1K 499 -> 581 tok/s (+16%, the first token after 1.7 s
+instead of 2.0), 2K 847 -> 864; card 1's GPU timeline 886 -> 622 ms with "wait copy" 468 -> 7 ms - the CPU computes
+the experts not resident on the card instead of the card waiting for them over PCIe. `STRATA_PREFILL_STREAM_MIN=128`
+(the fused kernels from 128 tokens): 497 / 792, nothing or worse. Step 11 (`data/s11-*`): a repeat 1K 538 -> 611 tok/s (+13%), 2K 852 -> 910 (+7%); its answers on short prompts right
+(needles at 1K 3 of 3, the facts at 1K, `smoke.py` 7 of 7, no engine error). Step 12 (`data/s12-*`, 1K / 2K / 4K): the base 502 / 845 / 1,227 tok/s, `auto` 564 / 857 / 1,202, `0.5` 541 / 830 /
+1,198, **`1` 583 / 864 / 1,199** - the fixed full share is best at 1K-2K and neutral at 4K; in the production config
+since 09 Oct.
 
 With the fused path and the WMMA attention (the production config since 09 Oct), a 32K prompt reads at 2,654 tok/s
 (step 7's base; the default path 1,438). More cache on the desktop card (`--vram-reserve-later-mib 2048` / `1536`,
 `data/s7-*`): its cache 8,398 -> 9,032 / 9,301 slots, but the automatic split then moved layer 26 onto it, and the
 prompt read slower (2,475 / 2,523 tok/s, card 1's wait per chunk 1.5 -> 1.7-1.8 s); the GTT stayed at idle (32 / 106
-MB) even at 1536. Step 9 repeats it with the split pinned.
+MB) even at 1536. Step 9 repeated it with the split pinned at 27 (`data/s9-*`): card 2's cache 8,398 -> 8,933 / 9,201 slots (88 -> 90
+/ 91% resident), 32K prompts 2,726 / 2,647 / 2,699 tok/s (noise), 4K 1,164 / 1,226 / 1,257 (+5-8%, single runs),
+card 1's wait per chunk still ~1.7 s. So card 2's bound on the prompt path is not its expert residency; what it is
+(its draft-layer pass per chunk, 0.2-0.5 s in the host line, its hand-offs, its compute) needs card 2's own prompt
+timeline, which the HIP build does not record (the peer timeline is CUDA-only) - a code item for later. The reserve
+stays 3072 (decode is unchanged by it and the desktop keeps its room).
 
 `STRATA_PF_FUSED=1` is upstream's own fused prompt path, opt-in because it **rounds differently** (the maintainers gate
 it with a KL check on gfx1151; docs/STRIX_HALO.md). Its 32K summary was correct and coherent, with other wording than

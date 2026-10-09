@@ -1,0 +1,2 @@
+{"test": "speed", "name": "16k", "prompt_n": 16341, "prompt_tps": 1739.4, "ttft_s": 9.4, "decode_n": 119, "decode_tps": 95.6, "deg": {"chars": 706, "words": 91, "comp_min": 0.615, "comp_med": 0.615, "rep8_max": 1, "tail_loop": "", "bad_char_frac": 0.0, "cjk_frac": 0.0, "bad": false, "why": []}, "label": "s3-upmix", "at": "18:17:11"}
+{"test": "system", "name": "ram", "mem_available_min_gib": 76.1, "label": "s3-upmix", "at": "18:17:12"}

@@ -1,0 +1,2 @@
+{"test": "speed", "name": "32k", "prompt_n": 30729, "prompt_tps": 1812.4, "ttft_s": 17.0, "decode_n": 129, "decode_tps": 81.4, "deg": {"chars": 712, "words": 96, "comp_min": 0.615, "comp_med": 0.615, "rep8_max": 1, "tail_loop": "", "bad_char_frac": 0.0, "cjk_frac": 0.0, "bad": false, "why": []}, "label": "s3-chunk16k", "at": "18:19:12"}
+{"test": "system", "name": "ram", "mem_available_min_gib": 75.1, "label": "s3-chunk16k", "at": "18:19:13"}

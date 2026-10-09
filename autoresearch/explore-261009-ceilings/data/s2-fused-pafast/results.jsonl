@@ -1,0 +1,2 @@
+{"test": "speed", "name": "16k", "prompt_n": 16341, "prompt_tps": 1733.9, "ttft_s": 9.4, "decode_n": 119, "decode_tps": 89.6, "deg": {"chars": 721, "words": 90, "comp_min": 0.609, "comp_med": 0.609, "rep8_max": 1, "tail_loop": "", "bad_char_frac": 0.0, "cjk_frac": 0.0, "bad": false, "why": []}, "label": "s2-fused-pafast", "at": "18:13:31"}
+{"test": "system", "name": "ram", "mem_available_min_gib": 76.2, "label": "s2-fused-pafast", "at": "18:13:32"}

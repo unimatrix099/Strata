@@ -1,0 +1,3 @@
+{"test": "speed", "name": "1k", "prompt_n": 997, "prompt_tps": 538.3, "ttft_s": 1.9, "decode_n": 108, "decode_tps": 93.0, "deg": {"chars": 690, "words": 87, "comp_min": 0.584, "comp_med": 0.584, "rep8_max": 1, "tail_loop": "", "bad_char_frac": 0.0, "cjk_frac": 0.0, "bad": false, "why": []}, "label": "s11-base2", "at": "18:43:17"}
+{"test": "speed", "name": "2k", "prompt_n": 1782, "prompt_tps": 852.4, "ttft_s": 2.1, "decode_n": 116, "decode_tps": 97.5, "deg": {"chars": 620, "words": 92, "comp_min": 0.618, "comp_med": 0.618, "rep8_max": 1, "tail_loop": "", "bad_char_frac": 0.0, "cjk_frac": 0.0, "bad": false, "why": []}, "label": "s11-base2", "at": "18:43:21"}
+{"test": "system", "name": "ram", "mem_available_min_gib": 75.8, "label": "s11-base2", "at": "18:43:22"}
