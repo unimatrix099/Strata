@@ -1,0 +1,15 @@
+=== reasoning ===
+We need answer user's question. Need parse provided docs. User says: "The text above contains three notes for the auditors. Using them: (1) what is the access code of vault BETA? (2) who is the courier assigned to vault GAMMA? Answer briefly."
+
+We need find notes:
+1. In docs/LLAMA_SWAP.md: "Note for the auditors: the access code of vault ALPHA is 4814."
+2. In docs/ORCA.md: "Note for the auditors: the access code of vault BETA is the code of vault ALPHA plus 4201."
+3. In docs/TROUBLESHOOTING.md: "Note for the auditors: the courier assigned to vault GAMMA is Ilinca Moraru."
+
+Question: (1) access code of vault BETA? ALPHA 4814 + 4201 = 9015. (2) courier GAMMA = Ilinca Moraru. Need answer briefly. Ensure no hidden issue? Let's verify arithmetic: 4814 + 4201 = 9015. Yes.
+
+Need final concise.
+
+=== answer ===
+1. Vault BETA access code: **9015**  
+2. Courier assigned to vault GAMMA: **Ilinca Moraru**

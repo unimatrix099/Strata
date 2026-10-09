@@ -1,0 +1,6 @@
+=== reasoning ===
+We need answer user's request. Need parse notes: "Note for the auditors: the access code of vault ALPHA is 1569." Later: "Note for the auditors: the access code of vault BETA is the code of vault ALPHA plus 2369." Later: "Note for the auditors: the courier assigned to vault GAMMA is Teodora Vlasic." Need answer briefly: (1) BETA code = 1569 + 2369 = 3938. (2) Teodora Vlasic. Need ensure no hidden issue? User asks using them. Brief. Final concise.
+
+=== answer ===
+1. Vault BETA access code: **3938**  
+2. Courier assigned to vault GAMMA: **Teodora Vlasic**

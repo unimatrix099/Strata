@@ -93,6 +93,27 @@ is not instrumented: with 16K chunks card 1's time fell 20% (13.1 s) and the end
 | `--prefill 16384` (16K chunks) | 1,461 (+1.6%) | 21.0 s | 13.1 s |
 | `STRATA_PREFILL_HELP=1` (the idle card helps one-chunk prompts), a 4.6K prompt | 1,248 against 1,251 | | the helper is off above ~3.3K tokens |
 
+On top of the fused path, 16K prompt (short tests, one run each; `data/s2-*`):
+
+| setting | prompt tok/s | first token after | attention's share of card 1's time |
+|---|---|---|---|
+| `STRATA_PF_FUSED=1` | 1,685 | 9.7 s | 23.6% |
+| + `STRATA_HIP_WMMA=1` (the prompt attention on the matrix cores; the engine confirms it on gfx1100) | **2,025 (+20%)** | 8.1 s | 9.9% |
+| + `STRATA_PA_FAST=1` (single FP16 q and p) | 1,734 | 9.4 s | 23.5% |
+| + both | **2,097 (+24%)** | 7.8 s | 5.6% |
+
+Both round differently from the default attention (docs/AMD_HIP.md: not bitwise). The WMMA attention passed a shorter
+quality check (needles 6/6 at 32K/128K, facts 2/2, the 96K conversation, a 2,000-token answer after 118K) and is in
+production since 09 Oct; `STRATA_SELECT_WMMA=1` on top: 2,031 tok/s, nothing. `STRATA_PA_FAST` waits for its check. Decode with `STRATA_HC_Q8=1`: 93.75 against 93.85 tok/s, and the engine reports
+"0.00 GiB of Q8_0 hyper-connection projections": inert on this GGUF (its projections are bf16), as the code reads.
+
+More on the fused base (short tests, one run each; `data/s3-*`): `STRATA_HC_UPMIX=1` 1,739 tok/s at 16K (+3%, noise),
+`STRATA_PF_PAD=1` 1,695 (nothing); at 32K the fused base 2,090, 16K chunks 1,812 (**-13%**: fewer, longer chunks
+overlap less), `--layer-split 28` 2,164 (+3.5%), `--layer-split 30` 2,207 (+5.6%; card 1's wait for card 2 per chunk
+1.5 -> 0.9 s: on the prompt path card 2 is the slower stage) - but a later split cost decode 1-7% per window on 07 Oct,
+so 26 stays. Short prompts: 1K tokens read at 488 tok/s (2.0 s to the first token), 2K 821, 4K 1,107 -
+`STRATA_PREFILL_STREAM_MIN=128` changes nothing there.
+
 `STRATA_PF_FUSED=1` is upstream's own fused prompt path, opt-in because it **rounds differently** (the maintainers gate
 it with a KL check on gfx1151; docs/STRIX_HALO.md). Its 32K summary was correct and coherent, with other wording than
 the default's. Two identical default runs also wrote different summaries (the installed config is not run-to-run

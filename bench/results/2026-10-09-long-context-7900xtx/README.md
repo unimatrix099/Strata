@@ -263,6 +263,13 @@ stories do), the 96K conversation recalled, no engine error, no GTT spill. Promp
 Decode is unchanged (91-101 tok/s in the same runs). The production config carries `"STRATA_PF_FUSED": "1"` since
 09 Oct; its answers can differ in wording from the default path's (both correct in every check here).
 
+**`STRATA_HIP_WMMA=1`** on top (the prompt attention on the matrix cores; the engine confirms it on gfx1100; not
+bitwise either): 16K prompt 1,685 -> 2,025 tok/s (+20%), attention's share of card 1's time 24% -> 10%. A shorter
+quality check (`data/wmma-quality/`): needles at 32K and 128K 6 of 6, facts at 64K and 118K 2 of 2, the 96K
+conversation recalled, a 2,000-token answer after 118K coherent (that prompt read at 3,368 tok/s, the first token
+after 36 s - 101-108 s on the default path). In the production config since 09 Oct; the full suite with it is on the
+list of later tests, with `STRATA_PA_FAST=1` (+3-4% more, another rounding change, not yet quality-checked).
+
 ## Not tested
 
 Contexts above 128K (the config's limit), more than 4 long conversations at once, other languages than

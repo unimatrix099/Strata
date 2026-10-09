@@ -1,0 +1,79 @@
+# Technical Report: Strata Engine Architecture and Implementation
+
+## Executive Summary
+
+Strata is a high-performance inference engine designed to run large Mixture-of-Experts (MoE) models, specifically the Qwen3.8-Flash-Next family, on consumer-grade hardware. Unlike traditional inference engines that rely heavily on high-bandwidth GPU memory (VRAM), Strata employs a hybrid CPU/GPU architecture. It leverages system RAM as a primary storage tier for model weights, using the GPU primarily for computation and caching frequently accessed "hot" experts. This design allows massive models (up to 100+ GB) to run on machines with modest VRAM (12–24 GB) but sufficient system RAM (32–64 GB+).
+
+The engine is built around a custom C++ core with specialized kernels for CUDA, AMD HIP, and Intel SYCL. It features a sophisticated session management system, a multi-GPU layer-splitting capability, and a unique "expert streaming" mechanism that overlaps data transfer with computation. This report details the architectural components, data flow, and key design decisions found in the provided source code and documentation.
+
+## 1. Core Architecture: The Hybrid Memory Model
+
+The defining characteristic of Strata is its approach to memory hierarchy. Standard LLM inference engines typically load all model weights into VRAM. Strata, however, treats VRAM as a cache and System RAM as the primary storage for the model's expert weights.
+
+### 1.1 Expert Streaming and Caching
+In MoE models, only a subset of experts is activated for each token. Strata exploits this sparsity.
+*   **The Expert Cache:** A portion of the model’s experts (the "hot" experts) are loaded into VRAM. The engine uses a profile-based ranking system (`expert-profile.bin`) to determine which experts are most frequently used and prioritizes them for VRAM residency.
+*   **The RAM Arena:** Experts not resident in VRAM are stored in a pinned host memory arena. When a token routes to an expert not in VRAM, the engine streams the necessary weights from RAM to the GPU over PCIe.
+*   **CPU Fallback:** For experts that cannot be efficiently streamed or are rarely used, the engine can compute them on the CPU using optimized AVX2/AVX-512 kernels. This is managed by a worker pool that runs in parallel with GPU computation.
+
+### 1.2 Concurrent Execution
+A critical design decision is the overlap of CPU and GPU work. As seen in `src/core/concurrent_main.cpp`, the engine explicitly tests and manages the contention between CPU memory bandwidth and PCIe bandwidth.
+*   **Independent Resources:** The engine assumes that CPU expert computation (reading from RAM) and GPU expert streaming (reading from RAM via PCIe) can run concurrently.
+*   **Pipeline:** While the GPU computes the current layer, the CPU may be preparing the next layer’s experts, or the PCIe bus may be streaming weights for the next chunk. This pipelining is essential for maintaining throughput on hardware where PCIe bandwidth is a bottleneck.
+
+## 2. Model Loading and Artifact Management
+
+Strata does not load models in the standard GGUF format directly into memory in a naive way. It uses a specialized packing and loading pipeline to optimize for its hybrid architecture.
+
+### 2.1 GGUF Reader and Dequantization
+The engine includes a custom GGUF reader (`src/artifact/gguf_reader.cpp`) and dequantizer (`src/artifact/dequant.cpp`).
+*   **Format Support:** It supports various quantization formats (Q2_0, Q4_K, Q5_K, Q6_K, IQ3_S, etc.).
+*   **Compatibility Packing:** For models like Unsloth’s UD-Q4_K_XL, the engine requires a "compat-bf16" packing step (`tools/iq_pack.py`). This step converts certain small projections (hyper-connections, PLE keys) from their stored quantized format into BF16 or FP16, which the engine’s kernels expect. This is a trade-off: it increases the size of these small tensors slightly but allows the engine to use highly optimized tensor-core kernels for them.
+*   **Native Experts:** The `native_experts.txt` manifest allows the engine to read expert weights directly from the GGUF shards without creating a separate `experts.bin` file. This saves disk space and leverages the OS file cache for cold experts.
+
+### 2.2 Session Management and Persistence
+Strata implements a robust session persistence system (`src/core/conversation_file.cpp`) to save and restore conversation states.
+*   **Binary Format:** Sessions are saved in a custom binary format (v1) that includes a header with magic bytes, version, and fingerprints for the model and configuration.
+*   **Integrity Checks:** The format uses a custom hash (`session_hash64`) to verify the integrity of the payload. It checks for truncation, corruption, and mismatched model configurations.
+*   **Atomic Writes:** Session files are written to temporary files and then renamed atomically. This ensures that a crash during saving does not corrupt existing session data.
+*   **Direct I/O:** On Linux, the engine attempts to use `O_DIRECT` for session I/O to bypass the page cache, preventing large session files from evicting other useful data from RAM. It falls back to buffered I/O if the filesystem does not support it.
+
+## 3. Inference Engine and Kernel Design
+
+The inference engine is highly optimized for specific hardware architectures, with distinct code paths for NVIDIA (CUDA), AMD (HIP), and Intel (SYCL).
+
+### 3.1 Kernel Specialization
+The engine does not use a single generic kernel for all operations. Instead, it selects kernels based on the target architecture and the specific operation.
+*   **CUDA:** Uses Tensor Cores for matrix multiplications (GEMMs) and attention. For older cards (Volta, Pascal), it falls back to FP16 or FP32 kernels. For example, `src/core/arch_defaults.cpp` shows specific switches for AMD gfx1151 (Strix Halo) to enable fused kernels and specific memory layouts.
+*   **AMD HIP:** Supports RDNA2, RDNA3, and RDNA3.5 (gfx1151). It uses WMMA (Wave Matrix Multiply Accumulate) instructions for matrix operations on supported cards.
+*   **Intel SYCL:** A separate port (`sycl/`) exists for Intel Arc GPUs. It uses oneMKL for GEMMs and custom SYCL kernels for attention and expert routing. The SYCL port has specific limitations, such as the lack of native FP64 support on some cards, requiring emulation or workarounds.
+
+### 3.2 Attention Mechanisms
+Strata implements a custom attention mechanism optimized for long contexts.
+*   **QSA (Query-Sparse Attention):** The engine uses a sparse attention mechanism that selects a subset of key-value pairs for each query. This reduces the computational cost of attention for long prompts.
+*   **Prompt Attention:** For processing long prompts, the engine uses specialized kernels (`prompt_attn_v70_kernel` for Volta, etc.) that leverage tensor cores to compute attention scores efficiently.
+*   **KV Cache Management:** The KV cache is managed in pages. For long contexts, parts of the KV cache can be streamed from RAM to VRAM (`--kv-resident`), allowing the engine to handle contexts larger than VRAM capacity.
+
+### 3.3 Mixture-of-Experts Routing
+The routing logic determines which experts to activate for each token.
+*   **Profile-Based Routing:** The engine uses a pre-computed profile to predict which experts are likely to be used. This allows it to prefetch experts into VRAM or prepare them for streaming.
+*   **Adaptive Swapping:** During inference, the engine can dynamically swap experts in and out of VRAM based on actual usage patterns (`--adapt-swaps`). This ensures that the most frequently used experts remain in VRAM.
+
+## 4. Multi-GPU and Layer Splitting
+
+Strata supports running a single model across multiple GPUs using layer splitting.
+
+### 4.1 Layer Splitting Strategy
+*   **Pipeline Parallelism:** The model’s layers are divided into contiguous ranges, each assigned to a different GPU. For example, GPU 0 runs layers 0–23, and GPU 1 runs layers 24–47.
+*   **Hand-Off:** Data is passed between GPUs via pinned host memory. The engine optimizes this hand-off by launching the next GPU’s window graph early (`STRATA_SPLIT_EARLY_LAUNCH`) and using asynchronous commits (`STRATA_SPLIT_COMMIT_SYNC=0`) to minimize idle time.
+*   **Expert Caching per Card:** Each GPU maintains its own expert cache for its assigned layers. This effectively doubles the total VRAM available for experts when using two cards.
+
+### 4.2 Helper GPUs and Peer Devices
+*   **Helper Caches:** Secondary GPUs can act as "helper" caches, storing experts that the primary GPU cannot hold. The primary GPU requests these experts from the helper over PCIe.
+*   **Peer Devices:** A peer device can compute experts for the primary GPU, effectively acting as a second compute tier. This is useful for models that do not fit in a single GPU’s VRAM but can be split across two GPUs.
+
+## 5. Performance Optimization and Tuning
+
+Strata includes numerous switches and environment variables to tune performance for specific hardware and workloads.
+
+### 
