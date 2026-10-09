@@ -37,6 +37,9 @@ the batch groups without pad rows, the server's pipeline groups and slot choice,
   3072`: the desktop card keeps 3 GB free (with less, the driver moves ~20 GB of Strata's memory to system RAM and
   decoding drops to 15 tok/s - docs/AMD_HIP.md);
 - `--pipeline-windows 2 --spec 3 --spec-min-p 0.7`, `"draft_vocab": "en"`;
+- `--ple-io ram` (since 09 Oct, evening): the 28.8 GB per-layer embedding table in RAM instead of read from the SSD a
+  few rows per token - prompts 4K +22-29%, 32K +9-10%, exact; 15 s to load on a cold start; `ulimit -l` unlimited lets
+  the engine lock it;
 - `--conversation-cache-mib 16384 --conversation-cache-slots 4` (since 09 Oct): up to four conversations parked in
   RAM, so switching between long ones takes ~1 s instead of re-reading them (~55 s at 64K);
 - `"env": {"STRATA_PIPELINE_DEBUG": "1", "STRATA_PIPELINE_THETA": "0.1", "STRATA_QFUSE": "1", "STRATA_PF_FUSED": "1",
@@ -159,6 +162,7 @@ card: the launch gaps equal the bandwidth floor), prompt reading at a third of t
 | 09 Oct | `STRATA_HIP_WMMA=1` in production after a quality check | +20% more on prompts; 118K read at 3,368 tok/s |
 | 09 Oct | `STRATA_PREFILL_CPU_SHARE=1` in production after a short-prompt check | 1K reads +13-16% (agent turns) |
 | 09 Oct | `STRATA_PA_FAST=1` in production after a check; a 64K resident KV measured (nothing) | long prompts +2-3.5% |
+| 09 Oct | `--ple-io ram` in production (the PLE table in RAM; exact) | 4K prompts +22-29%, 32K +9-10% |
 
 ## Bringing in upstream's changes
 

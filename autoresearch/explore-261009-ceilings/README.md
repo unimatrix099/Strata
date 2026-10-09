@@ -11,6 +11,7 @@ decode 97-108 tok/s (17 ms per window, 1.85 tokens per window), prompt reading 1
 | `STRATA_PF_FUSED=1` (upstream's fused expert kernels on the prompt path) | 32K 1,438 -> 2,057 tok/s; 118K 1,119 -> 2,787 | every prompt from 1,024 tokens |
 | `STRATA_HIP_WMMA=1` (the prompt attention on the matrix cores) | 16K 1,685 -> 2,025; 32K -> 2,654-2,726; 118K -> 3,368 | long prompts (attention's share 24% -> 6-10%) |
 | `STRATA_PREFILL_CPU_SHARE=1` (the CPU computes a short chunk's non-resident experts instead of streaming them) | 1K 500-538 -> 583-611; 2K 845-852 -> 864-910 | agent turns (reads under ~3K tokens) |
+| `--ple-io ram` (the 28.8 GB per-layer embedding table in RAM instead of SSD reads; exact) | 4K 1,130 -> 1,384-1,455 (+22-29%); 32K 2,831 -> 3,093-3,119 (+9-10%); card 1's PLE blocking 1.8 s -> 0.08 s per 32K | every prompt; a 15 s table load on a cold start (0.1 s warm) |
 | `STRATA_PA_FAST=1` (the prompt attention with single FP16 q and p) | 16K 2,025 -> 2,097; 118K 3,368 -> 3,434 | long prompts, +2-3.5% (step 13's check: needles 6/6 at 32K/128K, the facts at 118K, a 2K-token answer after 118K coherent) |
 
 In all: a 1K prompt's first token 2.0 -> 1.7 s, 32K 21-27 -> ~12 s, 118K 101-108 -> 36 s; decode unchanged
@@ -114,8 +115,11 @@ the steady state)**; a 32K prompt's 11.6 s are the serial first chunk, three mor
 still blocks 1.2-1.7 s per 32K prompt in the PLE row lookups (`ple_land`, the host line's "PLE"), ~0.3-0.4 s of each
 chunk: the exact fix is to gather them further ahead or in parallel (the next code item) - or no code at all: the PLE reader
 reads the 28.8 GB table from the SSD with one I/O thread (`src/ngram/ple_reader.cpp`), and the engine already has
-`--ple-io ram` (the table mapped and locked in RAM; ~70 GB were free in every run here). **Next test: `--ple-io ram`
-on a 32K prompt** (expected: the 1.2-1.7 s of PLE blocking per 32K gone, ~+15% on long prompts; exact).
+`--ple-io ram` (the table mapped and locked in RAM; ~70 GB were free in every run here). Measured (step 14, `data/s14-*`): `--ple-io ram` 4K 1,130 -> 1,455 / 1,384 tok/s, 32K 2,831 -> 3,119 / 3,093, the PLE
+blocking 1,811 -> 77 / 74 ms per 32K; decode unchanged; the same rows (exact). The engine loads the table in 15 s on a
+cold start (0.1 s warm, from the page cache) and says "mlock failed (Cannot allocate memory; raise ulimit -l)" in this
+sandbox: the pages stay faulted in but could be reclaimed under memory pressure (the Docker compose file sets memlock
+unlimited; on a bare host raise `ulimit -l`). In the production config since 09 Oct.
 
 ## 5. Measured today: switches on the prompt path (32K prompt, the installed config)
 

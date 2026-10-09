@@ -1,0 +1,9 @@
+strata: PLE table mlock failed (Cannot allocate memory; raise `ulimit -l`): its pages stay faulted in but may be reclaimed
+strata generate: PLE table loaded (not locked) (--ple-io ram) in 15.0 s
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 7 ms, waiting for each chunk 0 ms, after each chunk (the draft layer, progress) 0 ms, PLE 12 ms
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 0 ms, waiting for each chunk 1061 ms, after each chunk (the draft layer, progress) 166 ms, PLE 0 ms
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 1 ms, waiting for each chunk 1453 ms, after each chunk (the draft layer, progress) 317 ms, PLE 0 ms
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 0 ms, waiting for each chunk 1511 ms, after each chunk (the draft layer, progress) 328 ms, PLE 0 ms
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 0 ms, waiting for each chunk 1618 ms, after each chunk (the draft layer, progress) 268 ms, PLE 0 ms
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 1 ms, waiting for each chunk 0 ms, after each chunk (the draft layer, progress) 0 ms, PLE 77 ms
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 0 ms, waiting for each chunk 1598 ms, after each chunk (the draft layer, progress) 238 ms, PLE 0 ms
