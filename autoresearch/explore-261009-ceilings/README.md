@@ -121,6 +121,16 @@ cold start (0.1 s warm, from the page cache) and says "mlock failed (Cannot allo
 sandbox: the pages stay faulted in but could be reclaimed under memory pressure (the Docker compose file sets memlock
 unlimited; on a bare host raise `ulimit -l`). In the production config since 09 Oct.
 
+**A kernel trace of a 4K prompt on the production path** (step 15, `rocprofv3`, `data/s15-prof/`): in the prompt's
+2.7 s window each card runs kernels for only 0.75-0.80 s (27-29% busy). The kernels are not the problem - the
+hipBLASLt GEMMs 0.13-0.16 s, the fused expert kernels ~0.3 s, the GDN recurrence 0.06, the WMMA attention 0.05 per
+card; the time is the two stages running one after the other on a one-chunk prompt (each card idle while the other
+works) and the waits for streamed experts. Hence step 16: smaller chunks, so a 4K prompt pipelines across the cards - measured (`data/s16-*`, with `--ple-io ram`
+on): chunks of 8192 / 4096 / 2048 read a 4K prompt at 1,474 / 1,365 / 1,339 tok/s and a 32K one at 3,032 / 2,713 /
+1,797: **worse at every size**, since each chunk streams card 2's non-resident experts again (~0.6 s per chunk). The
+default 8192 stays. Short prompts are left with the serial two-stage structure as their bound; a one-chunk prompt
+would need the stages to split the chunk between them (a design change), or more of card 2's experts resident.
+
 ## 5. Measured today: switches on the prompt path (32K prompt, the installed config)
 
 | setting | prompt tok/s | first token after | card 1 GPU time |

@@ -1,0 +1,29 @@
+total kernel time 18.89 s
+ 11.639 s  61.6%    9234 x   1260.5 us  Agent 2  wait_flag_ge_kernel
+  3.750 s  19.8%    5184 x    723.3 us  Agent 1  wait_flag_ge_kernel
+  0.172 s   0.9%     168 x   1021.3 us  Agent 2  Cijk_Alik_Bljk_HSS_BH_Bias_HA_S_SAV_UserArgs_MT96x96x32_MI16x16x1_SN_L
+  0.133 s   0.7%     132 x   1010.1 us  Agent 1  Cijk_Alik_Bljk_HSS_BH_Bias_HA_S_SAV_UserArgs_MT96x96x32_MI16x16x1_SN_L
+  0.104 s   0.5%      43 x   2413.1 us  Agent 2  void fused::native_w11_kernel<17, true, true, 8>
+  0.072 s   0.4%      21 x   3443.0 us  Agent 2  gdn_rec_cols_pipe_kernel
+  0.068 s   0.4%     715 x     95.5 us  Agent 1  void native_q5_k_mmvq_kernel<false>
+  0.063 s   0.3%     120 x    522.1 us  Agent 2  void fused::native_w11_kernel<42, false, true, 8>
+  0.059 s   0.3%    5472 x     10.7 us  Agent 2  void native_down_multi_kernel<42, true>
+  0.057 s   0.3%      15 x   3781.1 us  Agent 1  gdn_rec_cols_pipe_kernel
+  0.054 s   0.3%     897 x     60.2 us  Agent 1  void attn_chunk_kernel<1, false>
+  0.054 s   0.3%     189 x    284.2 us  Agent 2  __amd_rocclr_fillBufferAligned
+  0.053 s   0.3%       6 x   8837.8 us  Agent 2  void prompt_attn_wmma_kernel<false>
+  0.053 s   0.3%     148 x    356.9 us  Agent 2  Cijk_Alik_Bljk_BSS_BH_Bias_HA_S_SAV_UserArgs_MT96x96x32_MI16x16x1_SN_L
+  0.052 s   0.3%       6 x   8590.2 us  Agent 1  void prompt_attn_wmma_kernel<false>
+  0.046 s   0.2%    3732 x     12.5 us  Agent 1  void native_mmvq_multi_kernel<SmallTraits<Q80Block, 8>, 8, 4, 2, false
+  0.044 s   0.2%      42 x   1047.2 us  Agent 1  void dequant_kernel<14, H16>
+  0.042 s   0.2%      36 x   1160.9 us  Agent 1  void fused::native_w11_kernel<21, true, true, 8>
+  0.042 s   0.2%      87 x    477.2 us  Agent 1  void fused::native_w11_kernel<20, false, true, 8>
+  0.040 s   0.2%     117 x    342.1 us  Agent 1  Cijk_Alik_Bljk_BSS_BH_Bias_HA_S_SAV_UserArgs_MT96x96x32_MI16x16x1_SN_L
+  0.039 s   0.2%      35 x   1122.4 us  Agent 2  void fused::native_w11_kernel<16, true, true, 8>
+  0.037 s   0.2%    2760 x     13.5 us  Agent 1  void native_small_mmvq_kernel<Q80Block, 8, false>
+  0.037 s   0.2%    3078 x     12.1 us  Agent 2  fetch_blobs_kernel
+  0.036 s   0.2%     897 x     40.3 us  Agent 1  attn_merge_kernel
+  0.035 s   0.2%      29 x   1221.9 us  Agent 2  void fused::native_w11_kernel<21, true, true, 8>
+  0.035 s   0.2%      26 x   1362.1 us  Agent 2  void fused::native_w11_kernel<22, true, true, 8>
+  0.035 s   0.2%      37 x    936.3 us  Agent 1  void fused::native_w11_kernel<18, true, true, 8>
+  0.035 s   0.2%    2868 x     12.1 us  Agent 2  void gr_up_multi_kernel<1, true>
