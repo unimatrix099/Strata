@@ -116,7 +116,19 @@ More on the fused base (short tests, one run each; `data/s3-*`): `STRATA_HC_UPMI
 overlap less), `--layer-split 28` 2,164 (+3.5%), `--layer-split 30` 2,207 (+5.6%; card 1's wait for card 2 per chunk
 1.5 -> 0.9 s: on the prompt path card 2 is the slower stage) - but a later split cost decode 1-7% per window on 07 Oct,
 so 26 stays. Short prompts: 1K tokens read at 488 tok/s (2.0 s to the first token), 2K 821, 4K 1,107 -
-`STRATA_PREFILL_STREAM_MIN=128` changes nothing there.
+`STRATA_PREFILL_STREAM_MIN=128` changes nothing there. Where a 1.8K prompt's 2.2 s go (`data/s3-short-base`):
+card 1's GPU timeline 0.9 s, of which **"wait copy" 0.42 s (46%)** - the experts not resident on card 1 streamed over
+PCIe for a chunk too short to hide them - then card 1 waits 0.87 s for card 2 (the stages run one after the other
+on a one-chunk prompt; card 2 streams ~22% of its experts, ~4 GB, ~0.6 s). So short prompts are PCIe-bound: more
+resident experts on card 2 (step 7) and the idle card's help are the levers. `STRATA_PREFILL_HELP=1` (step 6, `data/s6-*`):
+500 / 850 / 1,230 tok/s at 1K / 2K / 4K with and without it, and no helper line in the log - upstream documents it as
+unavailable with the fused prompt kernels, which the config has on; step 8 measures it with the fused path off.
+
+With the fused path and the WMMA attention (the production config since 09 Oct), a 32K prompt reads at 2,654 tok/s
+(step 7's base; the default path 1,438). More cache on the desktop card (`--vram-reserve-later-mib 2048` / `1536`,
+`data/s7-*`): its cache 8,398 -> 9,032 / 9,301 slots, but the automatic split then moved layer 26 onto it, and the
+prompt read slower (2,475 / 2,523 tok/s, card 1's wait per chunk 1.5 -> 1.7-1.8 s); the GTT stayed at idle (32 / 106
+MB) even at 1536. Step 9 repeats it with the split pinned.
 
 `STRATA_PF_FUSED=1` is upstream's own fused prompt path, opt-in because it **rounds differently** (the maintainers gate
 it with a KL check on gfx1151; docs/STRIX_HALO.md). Its 32K summary was correct and coherent, with other wording than
