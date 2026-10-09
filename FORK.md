@@ -37,6 +37,8 @@ the batch groups without pad rows, the server's pipeline groups and slot choice,
   3072`: the desktop card keeps 3 GB free (with less, the driver moves ~20 GB of Strata's memory to system RAM and
   decoding drops to 15 tok/s - docs/AMD_HIP.md);
 - `--pipeline-windows 2 --spec 3 --spec-min-p 0.7`, `"draft_vocab": "en"`;
+- `--conversation-cache-mib 16384 --conversation-cache-slots 4` (since 09 Oct): up to four conversations parked in
+  RAM, so switching between long ones takes ~1 s instead of re-reading them (~55 s at 64K);
 - `"env": {"STRATA_PIPELINE_DEBUG": "1", "STRATA_PIPELINE_THETA": "0.1", "STRATA_QFUSE": "1"}` (the pipeline's gate
   is read only with the debug switch).
 
