@@ -1,0 +1,52 @@
+Based on the documents provided, here are the answers to the specific questions followed by a summary of the content.
+
+### Answers to Auditor Questions
+
+1.  **Access code of vault BETA:** **7408**
+    *   *Derivation:* The note in `docs/LLAMA_SWAP.md` states: "the access code of vault BETA is the code of vault ALPHA plus 4683." The note in `docs/INTEL.md` states: "the access code of vault ALPHA is 2725." Therefore, $2725 + 4683 = 7408$.
+2.  **Courier of vault GAMMA:** **Bogdan Serban**
+    *   *Source:* The note in `docs/OLDER_GPUS.md` states: "the courier assigned to vault GAMMA is Bogdan Serban."
+
+***
+
+### Summary of Strata Documentation
+
+The provided documents constitute a comprehensive technical manual for **Strata**, a high-performance inference engine designed to run the **Qwen3.8-Flash-Next** Large Language Model (LLM) on consumer and professional hardware. The documentation covers installation, hardware compatibility (NVIDIA, AMD, Intel), advanced optimization techniques, multi-GPU configurations, and integration with external tools.
+
+#### Core Architecture and Installation
+Strata is built around a custom engine that optimizes the Qwen3.8-Flash-Next model, which is a Mixture-of-Experts (MoE) architecture. The engine supports various quantization levels (Q2_0, IQ2_XS, IQ3_XXS, IQ3_S) to balance speed, memory usage, and quality. The installation process is streamlined via `START-HERE.bat` on Windows and `setup.sh` on Linux. These scripts automatically detect hardware, download the necessary model files (approx. 70 GB), and configure the environment. The system uses a private Python environment (`.venv`) and manages model weights in a `Strata-data` folder.
+
+A key feature of Strata is its ability to run on systems with limited RAM by leveraging GPU VRAM. In "low-RAM mode," the engine maps model experts from disk or keeps them in VRAM, allowing models like the "Coder" variant to run on PCs with as little as 32 GB of RAM if paired with a capable GPU. The engine also supports an experimental "speed projection" and various context extension techniques (up to 262K tokens) using rope scaling.
+
+#### Hardware Support and Optimization
+
+**NVIDIA GPUs:**
+Strata primarily targets NVIDIA RTX 20/30/40/50 series cards using CUDA. It supports multi-GPU setups via layer splitting, where different layers of the model are assigned to different cards. This pipeline parallelism allows for faster prompt reading and decoding, especially when cards have different VRAM capacities. The documentation details optimizations for older GPUs (Volta, Pascal) using a CUDA 12 engine, which is experimental but allows Tesla V100 and P100 cards to run the model with specific kernel adjustments (e.g., emulating BF16 via FP16 tensor cores).
+
+**AMD GPUs:**
+Strata supports AMD Radeon cards (RX 6800/6900, RX 7900 XT/XTX, RX 9000 series) via the HIP backend. The documentation highlights specific challenges, such as the need for a VRAM reserve on cards driving the desktop environment to prevent system crashes (OOM killer). It also details experimental support for older RDNA1 cards (RX 5700 XT) and Instinct MI50/MI60 cards, requiring manual compilation. A significant portion of the documentation is dedicated to research on two RX 7900 XTX cards, demonstrating how asynchronous commits and early window launches improved decode speeds by over 60%.
+
+**Intel Arc GPUs:**
+Intel support is experimental and implemented via a SYCL port (`sycl/`). This port is not a standard backend but a migration of Strata’s CUDA kernels to Intel oneAPI. It currently supports Arc Pro B70, B60, B580, and A750 cards. The documentation notes that Intel support requires Docker for setup and has specific limitations, such as no image support and the need for careful VRAM management to avoid system livelocks. Performance on Intel Arc is competitive, with the B70 achieving decode speeds comparable to mid-range NVIDIA cards, though prompt reading is slower.
+
+#### Advanced Features and Research
+
+**Multi-GPU and Batching:**
+Strata supports running multiple conversations simultaneously ("batching") across multiple GPUs. This is particularly effective on multi-GPU setups, where different conversations can be pipelined through the cards. The documentation includes extensive benchmarks showing significant throughput gains (up to 162% for 8 concurrent conversations) when using batch groups and pipeline windows.
+
+**Prompt Caching and Context Management:**
+To handle long contexts efficiently, Strata implements prompt caching and checkpointing. Features like `STRATA_KV_PREFETCH` overlap KV cache uploads with computation, while `STRATA_CACHE_MESSAGE_BOUNDARY` allows reusing long chat history when the last message is edited. These optimizations reduce the time needed to re-read history in agent-like workflows.
+
+**Integration and Tools:**
+Strata exposes an OpenAI-compatible API and supports MCP (Model Context Protocol) servers. An MCP server (`tools/strata_mcp.py`) allows AI assistants (like Claude Code or Cursor) to install, start, stop, and monitor Strata instances. This enables automated management of the local LLM environment. Additionally, Strata can be integrated with `llama-swap` to manage multiple models behind a single endpoint.
+
+**Model Variants:**
+The documentation describes several model variants:
+*   **Original:** The standard Qwen3.8-Flash-Next.
+*   **Coder:** A specialized version with half the experts, optimized for coding tasks but weaker in general language tasks.
+*   **Swift 1.5:** A fine-tune that thinks shorter, providing faster answers.
+*   **Unsloth:** Higher-precision quantizations (UD-IQ4_XS, UD-Q4_K_XL) for users with more RAM.
+*   **OrcaRouter:** An uncensored variant requiring manual packing and setup.
+
+#### Conclusion
+The Strata documentation presents a sophisticated, highly optimized inference engine for the Qwen3.8-Flash-Next model. It emphasizes flexibility across hardware platforms (NVIDIA, AMD, Intel) and provides detailed technical guidance for maximizing performance through multi-GPU splitting, batching, and custom kernel optimizations. The inclusion of research notes on specific hardware configurations (like the 2x RX 7900 XTX) demonstrates a commitment to pushing the boundaries of local LLM inference, making it a powerful tool for developers and researchers seeking high-performance, local AI capabilities.

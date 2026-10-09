@@ -1,0 +1,58 @@
+Based on the "Note for the auditors" embedded within the provided documentation, here are the requested details:
+
+1.  **Access code of vault BETA:** 8128
+    *   *Derivation:* The text states the code for vault ALPHA is **4115**. It then states the code for vault BETA is "the code of vault ALPHA plus 4113." Therefore, $4115 + 4113 = 8128$.
+2.  **Courier of vault GAMMA:** Ilinca Moraru
+    *   *Source:* The text explicitly states: "Note for the auditors: the courier assigned to vault GAMMA is Ilinca Moraru."
+
+***
+
+### Summary of Strata Documentation
+
+The provided text is a comprehensive technical manual and documentation suite for **Strata**, an open-source software project designed to run large language models (LLMs), specifically the **Qwen3.8-Flash-Next** family, on consumer-grade hardware. The core challenge Strata addresses is the massive memory footprint of modern Mixture-of-Experts (MoE) models, which typically require hundreds of gigabytes of VRAM. Strata enables these models to run on PCs with modest graphics cards (12–24 GB VRAM) and standard system RAM (32–64 GB) by intelligently distributing the model’s components across the GPU, CPU, RAM, and SSD.
+
+#### Core Architecture and Memory Management
+Strata’s primary innovation is its tiered memory management system. The model consists of 24,576 "experts," but only a small subset (10) is active for any given token. Strata exploits this sparsity:
+*   **GPU (VRAM):** Stores the most frequently used experts, attention mechanisms, routers, and the KV cache. An adaptive "expert cache" dynamically swaps experts in and out of VRAM based on the current conversation context.
+*   **RAM:** Holds all experts. When the GPU lacks a specific expert, the CPU computes it in parallel with GPU operations, preventing idle time.
+*   **SSD:** Stores a large n-gram lookup table and, in "Low-RAM" modes, the expert weights themselves, which are mapped into memory as needed.
+
+The documentation details several modes for handling limited RAM:
+*   **Standard Mode:** All experts are pinned in RAM.
+*   **Low-RAM Mode:** Experts are memory-mapped from disk (`experts.bin` or GGUF files) to save RAM, relying on the OS file cache.
+*   **Resident Mode:** A hybrid approach where experts not held by the GPU are copied into RAM at startup, reducing SSD reads during inference.
+*   **Mapped Arena:** For Linux systems with large GPUs but limited RAM, experts are mapped read-only from disk, allowing the OS to reclaim memory pages held by the GPU.
+
+#### Performance and Optimization Features
+Strata employs several techniques to maximize speed on consumer hardware:
+*   **Speculative Decoding:** The model’s own Multi-Token Prediction (MTP) layer drafts up to 3 tokens, which are verified in a single pass. This significantly increases output speed (1.6–1.8x faster). The documentation details various draft vocabulary subsets (e.g., English, CJK, Cyrillic, French) to optimize draft acceptance rates for specific languages.
+*   **Prompt Processing:** Long prompts are processed in large chunks (up to 8,192 tokens) with experts streamed over PCIe. Recent updates (engine 0.1.13+) doubled prompt speed by using quantized matrix multiplication kernels and overlapping PCIe transfers with attention calculations.
+*   **CPU/GPU Sharing:** For short prompts, the CPU can share the workload of experts that are not in VRAM, reducing latency for agent-like interactions.
+*   **Rope Scaling:** Experimental support for extending context windows beyond the trained 262K tokens using YaRN or Linear scaling, allowing contexts up to 1M tokens on suitable hardware.
+
+#### Supported Models and Hardware
+The documentation focuses on **Qwen3.8-Flash-Next** and its variants:
+*   **Q2_0, IQ2_XS, IQ3_XXS:** Different quantization levels balancing speed and quality.
+*   **Coder:** A pruned version with half the experts, optimized for coding tasks, requiring only 32 GB RAM.
+*   **Swift 1.5:** A fine-tune designed to reduce "thinking" tokens for faster answers.
+*   **Unsloth UD-Q4_K_XL:** A 4-bit quantization supported via RAM budgeting.
+
+Hardware support includes NVIDIA RTX 20/30/40/50 series and AMD Radeon RX 7000/9000 series (via HIP). An experimental **Intel Arc** port using SYCL is also documented, showing promising results for the Coder model on Arc Pro B70 cards.
+
+#### Installation and Usage
+Strata provides automated setup scripts (`START-HERE.bat` for Windows, `setup.sh` for Linux) that handle Python environment creation, engine compilation (if necessary), and model downloading. It offers a web-based interface with Chat, Monitor, and About tabs. The server exposes OpenAI-compatible and Anthropic-compatible APIs, allowing integration with tools like Claude Code, Codex CLI, and OpenCode.
+
+Key configuration options include:
+*   **Context Length:** Users can choose contexts from 8K to 262K (or higher with rope scaling).
+*   **Vision:** Optional support for image inputs via a vision encoder, which can run on GPU or CPU.
+*   **MCP (Model Context Protocol):** Integration with external tools for file access, web search, etc., allowing the model to act as an agent.
+*   **VRAM Management:** Options to unload the model when idle, reserve VRAM for other applications, or dynamically shrink the expert cache to free up memory for games or other programs.
+
+#### Advanced Features and Troubleshooting
+The documentation includes detailed troubleshooting for common issues like driver incompatibilities, out-of-memory errors, and slow startup times. It also describes advanced features such as:
+*   **Conversation Caching:** Saving and restoring conversation states to disk to avoid re-reading long prompts.
+*   **JSON Response Formats:** Structured output validation for API requests.
+*   **API Monitoring:** An optional monitor for inspecting API traffic.
+*   **Experimental Speed Projection:** A control vector that reduces refusals but alters model behavior, available for the original Qwen model.
+
+Overall, Strata is a sophisticated inference engine that bridges the gap between massive, data-center-grade LLMs and accessible, consumer-grade hardware through clever memory tiering, speculative decoding, and optimized kernel implementations.

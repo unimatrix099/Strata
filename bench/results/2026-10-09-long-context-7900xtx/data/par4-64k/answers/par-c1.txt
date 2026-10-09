@@ -1,0 +1,58 @@
+Based on the "Note for the auditors" embedded within the provided documentation, here are the requested details:
+
+1.  **Access code of vault BETA:** 8128
+    *   *Derivation:* The text states the code for vault ALPHA is **4115**. It then states the code for vault BETA is "the code of vault ALPHA plus 4113." Therefore, $4115 + 4113 = 8128$.
+2.  **Courier of vault GAMMA:** Ilinca Moraru
+
+***
+
+### Summary of Strata Documentation
+
+The provided text is a comprehensive technical manual and documentation suite for **Strata**, an open-source software project designed to run large language models (LLMs), specifically the **Qwen3.8-Flash-Next** family, on consumer-grade hardware. The core challenge Strata addresses is the massive memory footprint of modern Mixture-of-Experts (MoE) models, which typically require hundreds of gigabytes of VRAM. Strata enables these models to run on PCs with 12–24 GB of VRAM and 32–64 GB of system RAM by intelligently distributing the model’s components across the GPU, CPU, RAM, and SSD.
+
+#### Core Architecture and Memory Management
+Strata’s primary innovation is its tiered memory management system. The model consists of 24,576 "experts," but only a small subset (10) is active for any given token. Strata exploits this sparsity:
+*   **GPU (VRAM):** Stores the most frequently used experts, attention mechanisms, and the KV cache. An adaptive "expert cache" dynamically swaps experts in and out of VRAM based on the current conversation context.
+*   **RAM:** Holds all experts. When the GPU lacks a specific expert, the CPU computes it in parallel with GPU operations, preventing idle time.
+*   **SSD:** Stores a large n-gram lookup table and, in "Low-RAM" modes, the expert weights themselves.
+
+The documentation details several modes for handling limited RAM:
+*   **Standard Mode:** All experts are pinned in RAM.
+*   **Low-RAM Mode:** Experts are memory-mapped from disk (`experts.bin` or GGUF files), relying on the OS file cache.
+*   **Resident Mode:** A hybrid approach where experts not held by the GPU are copied into RAM at startup, reducing SSD reads during inference.
+*   **Mapped Arena:** For Linux systems with small RAM but large GPUs, experts are mapped read-only from disk to save RAM.
+
+#### Performance and Optimization
+Strata employs aggressive optimization techniques to maximize throughput:
+*   **Speculative Decoding:** The model uses its own Multi-Token Prediction (MTP) layer to draft multiple tokens ahead, which are then verified in a single pass. This significantly increases output speed (1.6–1.8x faster).
+*   **Prompt Processing:** Long prompts are processed in large chunks (up to 8,192 tokens) with experts streamed over PCIe. Recent updates (engine 0.1.13+) doubled prompt speed by using quantized matrix multiplication kernels and overlapping PCIe transfers with attention calculations.
+*   **CPU/GPU Sharing:** For short prompts, the CPU can share the workload of experts that are not in VRAM, reducing latency for agent-like interactions.
+*   **Draft Vocabulary:** The MTP draft layer can be restricted to specific subsets of the vocabulary (e.g., English, CJK, Cyrillic) to save VRAM and improve draft acceptance rates for specific languages.
+
+#### Supported Models and Hardware
+The documentation focuses on **Qwen3.8-Flash-Next** and its variants:
+*   **Q2_0, IQ2_XS, IQ3_XXS:** Different quantization levels balancing speed and quality.
+*   **Coder:** A pruned version with half the experts, optimized for coding tasks, requiring only 32 GB of RAM.
+*   **Swift 1.5:** A fine-tune designed to reduce "thinking" tokens for faster answers.
+*   **Unsloth UD-Q4_K_XL:** A 4-bit quantization supported via a RAM budgeting system.
+
+Hardware support includes NVIDIA RTX 20/30/40/50 series, AMD Radeon RX 7000/9000 series (via HIP), and Intel Arc GPUs (via a dedicated SYCL port). The software supports Windows, Linux, and Docker.
+
+#### API and Integration
+Strata provides a local server compatible with **OpenAI** and **Anthropic** APIs. This allows integration with popular tools like **Claude Code**, **Codex CLI**, **OpenCode**, and **Zed**. Key features include:
+*   **Streaming:** Real-time token delivery with progress indicators for long prompts.
+*   **Tool Calling:** Support for function calls and MCP (Model Context Protocol) servers, allowing the model to interact with external tools (file systems, web search).
+*   **Conversation Caching:** The server maintains checkpoints of conversations to avoid re-reading long prompts, significantly speeding up multi-turn chats.
+*   **Session Files:** Conversations can be saved to disk and restored, allowing state persistence across restarts.
+
+#### Experimental Features and Tuning
+The documentation highlights several experimental or opt-in features:
+*   **Rope Scaling:** Extends context length beyond the trained 262K tokens using YaRN or linear interpolation.
+*   **Experimental Speed Projection:** A control vector that removes "refusal directions" from the model, potentially increasing speed but altering safety behaviors.
+*   **Calibration:** A tool (`--calibrate`) that automatically tunes engine settings (PCIe fraction, worker threads, draft thresholds) for the specific hardware configuration.
+*   **VRAM Elasticity:** Allows the model to dynamically release VRAM to other applications (like games) and reclaim it when needed.
+
+#### Installation and Troubleshooting
+Strata is designed for ease of use, with automated setup scripts (`START-HERE.bat` on Windows, `setup.sh` on Linux) that handle Python environments, CUDA/ROCm installation, and model downloads. The documentation provides extensive troubleshooting guides for common issues like VRAM exhaustion, driver incompatibilities, and slow startup times. It emphasizes the importance of NVMe SSDs and sufficient RAM, noting that while the model can run on 8 GB VRAM, performance is significantly better with 12 GB or more.
+
+In summary, Strata is a sophisticated inference engine that democratizes access to large MoE models by optimizing memory usage across heterogeneous hardware components, offering a balance of high performance, flexibility, and ease of integration for local AI applications.

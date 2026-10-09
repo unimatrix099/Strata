@@ -101,9 +101,41 @@ Prompt reading holds ~1,100-1,200 tok/s to 121K. Decode slows little with contex
 up to 122K (the 73.7 here is a 112-token answer, where the pipeline's start weighs more). Beyond 32K the attention
 cache streams from RAM: at 121K 92-96% of its block reads still hit VRAM (115-220 MiB read from RAM per answer).
 
+## Several conversations at once, 64K each (`"parallel"`)
+
+`longctx.py --tests par --set parallel=N --par-n N`: N conversations started together, each with its own ~64K prompt
+holding four notes (its own codes and courier), asking for vault BETA's code (ALPHA's code plus a number), vault
+GAMMA's courier and a ~1000-word summary (thinking off, greedy), then a second turn asking for vault DELTA's shelf
+number. Checked: the answers, no other conversation's code or courier in any answer, degeneration. The same two
+conversations were also run one at a time (`parallel` 1) for comparison. Data in `data/par2-64k`, `data/par4-64k`,
+`data/solo2-64k`.
+
+| | conversations right (courier, follow-up) | BETA code | other conversations' facts in an answer | first tokens after | all done |
+|---|---|---|---|---|---|
+| 2 at once | 2 of 2 | 1 of 2 | none | 56 / 113 s | 146 s |
+| 4 at once | 4 of 4 | 3 of 4 | none | 53 / 113 / 175 / 230 s | 402 s |
+| the same 2, one at a time | 2 of 2 | 1 of 2 | none | 54 / 120 s | 135 s |
+
+- **Correct and separate.** Every conversation found its own facts; no answer contained another's; no
+  degeneration, no engine error, no GTT spill. The one wrong BETA code is the same conversation every time, alone too
+  (4115 + 4113 given as 8128 instead of 8228, both numbers quoted right): the model's arithmetic without thinking,
+  not the slots.
+- **Slower than one at a time at 64K.** The prompts are read one after another either way (~55-65 s each), and while
+  four slots each hold ~64K a batch window carries one token per conversation (no drafts in slots) over a long
+  attention: the engine counted 5,731 tokens in 343 s for the four (16.7 tok/s in all, the prompt reads included),
+  against ~100 tok/s for one conversation alone. Two at once finished in 146 s against 135 s one at a time.
+- **Follow-up turns:** a slot keeps its conversation, so a follow-up read only its 32-34 new tokens (0.3-1.1 s) - for
+  2 of 4 at once; the other two had finished early, were moved back to the single path and re-read their 64K history
+  (60-67 s). One at a time, the single prompt cache holds one conversation, so both follow-ups re-read 64K (49-53 s).
+
+So for long contexts, `"parallel"` keeps several users' conversations correct and apart, but does not add speed on
+this PC; it pays with short contexts (agents: 180 tok/s in all at 8). For people alternating between long
+conversations, the conversation cache (`--conversation-cache-mib`, docs/DETAILS.md) is the thing to try - not
+measured here.
+
 ## Not tested
 
-Contexts above 128K (the config's limit), several long conversations at once (`"parallel"`), other languages than
+Contexts above 128K (the config's limit), more than 4 long conversations at once, other languages than
 English, images, and a reference model's output for comparison (the checks are recall, arithmetic, degeneration and
 reading the flagged answers).
 

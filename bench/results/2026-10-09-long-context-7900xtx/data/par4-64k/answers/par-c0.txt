@@ -1,0 +1,45 @@
+Based on the provided documentation, here are the answers to the specific questions followed by a summary of the files.
+
+### Specific Answers
+
+1.  **Access code of vault BETA:** **7857**
+    *   *Derivation:* The text states, "the access code of vault ALPHA is 3743." It later states, "the access code of vault BETA is the code of vault ALPHA plus 4114." Therefore, $3743 + 4114 = 7857$.
+2.  **Courier of vault GAMMA:** **Teodora Vlasic**
+    *   *Source:* The text explicitly states, "the courier assigned to vault GAMMA is Teodora Vlasic."
+
+***
+
+### Summary of Strata Documentation
+
+The provided documents constitute a comprehensive technical manual and performance benchmarking report for **Strata**, a high-performance inference engine designed to run large language models (LLMs), specifically the Qwen3.8-Flash-Next family, on consumer-grade hardware. The documentation covers installation, hardware compatibility (primarily AMD ROCm and NVIDIA CUDA), performance tuning, API usage, and advanced features like speculative decoding and multi-GPU splitting.
+
+#### Hardware Support and Performance Tuning
+
+A significant portion of the text focuses on optimizing Strata for AMD GPUs using the HIP backend (ROCm). The engine supports various architectures, including RDNA2 (gfx1030), RDNA3 (gfx1100), RDNA4 (gfx1201), and older GCN architectures (gfx906).
+
+*   **Memory Management and GTT Issues:** A critical finding in the "Conversation 0" section highlights a performance pitfall on dual RX 7900 XTX setups. By default, the engine might offload memory to the Graphics Translation Table (GTT), which is system RAM accessed over PCIe, causing severe bottlenecks. The solution involves configuring `--vram-reserve-mib` to keep VRAM free and adjusting GPU order (`--gpus 1,0`) to prioritize the non-display card. This adjustment resulted in a massive speed increase, raising prompt processing from ~80 tok/s to over 1,100 tok/s and decode speed from ~15 tok/s to ~70 tok/s.
+*   **RDNA4 and RDNA2 Specifics:** For newer RDNA4 cards (RX 9070 XT, R9700), the engine utilizes specific matrix core instructions (`v_wmma`) for attention mechanisms, offering significant speedups when enabled via `STRATA_HIP_WMMA=1`. For RDNA2 cards (RX 6800/6900 series), the lack of certain dot-product instructions requires fallback kernels, and FP16 prompt GEMMs can be optimized using `STRATA_HIP_PROMPT_F16=1` to bypass slower generic kernels.
+*   **Tuning Tables:** The engine relies on hipBLASLt tuning tables calibrated for specific GPU architectures and ROCm versions. These tables map GEMM shapes to optimized solution IDs. The documentation provides instructions for generating these tables using `tune_hipblaslt` and lists shipped tables for various cards (e.g., gfx1100, gfx1201). Using the correct table is crucial; mismatched versions can lead to significant performance degradation (up to 45% slower prompts).
+
+#### Model Quantization and Memory Efficiency
+
+Strata supports several quantization formats, primarily IQ2_XS, IQ3_XXS, IQ3_S, and Q2_0. The documentation emphasizes that VRAM capacity is the primary bottleneck for expert-heavy MoE (Mixture of Experts) models.
+
+*   **Low-RAM Modes:** For systems with insufficient RAM to hold all experts, Strata offers `--mmap-experts` (mapping experts from disk) and `--resident-experts` (copying a subset of experts to page-locked RAM). The "resident" mode is preferred when possible as it avoids SSD reads during inference.
+*   **KV Cache Streaming:** To save VRAM for expert caching, the engine can stream the KV cache to system RAM (`--kv-resident`), keeping only a window of the attention cache in VRAM. This allows larger contexts (up to 262K tokens) on smaller cards.
+*   **Expert Caching:** The engine dynamically manages an expert cache in VRAM. If the cache is too large and leaves 0 MiB free, performance collapses due to driver paging. The documentation advises using `--vram-reserve-mib` to ensure a safety margin, demonstrating that leaving ~1 GiB free can prevent a 7x slowdown.
+
+#### Advanced Features and API
+
+*   **Speculative Decoding (MTP):** Strata uses Multi-Token Prediction (MTP) to speed up generation. It drafts multiple tokens and verifies them in parallel. The documentation details various drafting strategies, including coupled drafting (`STRATA_SPEC_COUPLED=1`) and Gumbel-max sampling (`STRATA_SPEC_GUMBEL=1`), which improve draft acceptance rates for sampled requests.
+*   **Batching and Concurrency:** The engine supports serving multiple requests simultaneously via batch slots (`--batch N`). This is particularly effective on multi-GPU setups where layer splitting allows different GPUs to process different conversations in parallel. On single GPUs, batching reduces latency for concurrent users but may slightly reduce per-request throughput due to shared expert cache pressure.
+*   **API Compatibility:** Strata exposes an OpenAI-compatible API (`/v1/chat/completions`), an Anthropic-compatible API (`/v1/messages`), and the newer OpenAI Responses API (`/v1/responses`). It supports streaming, tool calling, and reasoning effort levels (none, low, medium, high). It also integrates with MCP (Model Context Protocol) servers, allowing the model to use external tools for file access or web search.
+*   **Vision Support:** The engine supports image inputs via a vision encoder. It can run the encoder on the GPU (faster, but consumes VRAM) or CPU (slower, but saves VRAM). The documentation notes that using a Q8_0 quantized vision encoder can save RAM and improve CPU encoding speed.
+
+#### Installation and Configuration
+
+*   **Setup:** Installation is automated via `setup.sh` (Linux) or `START-HERE.bat` (Windows). The setup script detects hardware, installs dependencies (Python, CUDA/ROCm), downloads models, and configures the engine.
+*   **Calibration:** The `--calibrate` option allows the engine to tune settings like PCIe fraction, draft confidence, and CPU worker counts based on the specific hardware's performance characteristics.
+*   **Community Benchmarks:** The documentation includes a guide for users to submit their own benchmark results, encouraging the sharing of hardware-specific performance data to help others estimate performance on similar machines.
+
+In conclusion, the Strata documentation presents a highly optimized, hardware-aware inference engine. It provides detailed guidance on overcoming common bottlenecks in consumer hardware (such as PCIe bandwidth limits and VRAM fragmentation) through careful configuration of memory reserves, tuning tables, and expert caching strategies. The engine is designed to maximize throughput and latency performance for large MoE models on diverse GPU architectures.

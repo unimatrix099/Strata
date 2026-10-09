@@ -38,6 +38,9 @@ def start_server(a, out):
     cfg["args"] = args + a.arg
     if a.exe:
         cfg["exe"] = a.exe
+    for kv in a.set:   # a config key, e.g. --set parallel=4 (the value as JSON)
+        k, v = kv.split("=", 1)
+        cfg[k] = json.loads(v)
     cfg["env"] = {**cfg.get("env", {}), **dict(e.split("=", 1) for e in a.env)}
     logs = os.path.join(out, "logs")
     os.makedirs(logs, exist_ok=True)
@@ -350,6 +353,74 @@ class Suite:
                   "=== reasoning ===\n" + r["reasoning"] + "\n=== answer ===\n" + r["content"])
 
 
+def _par_one(suite, i, tok, out_rows, t_start):
+    rnd = random.Random(1000 + i)
+    text = f"Conversation {i}, session {rnd.randint(10**8, 10**9)}.\n" + text_of(tok, offset=120000 * i + rnd.randint(0, 40000))
+    alpha, plus = rnd.randint(1000, 4999), rnd.randint(1000, 4999)
+    courier = ["Teodora Vlasic", "Ilinca Moraru", "Bogdan Serban", "Mirela Toma", "Radu Enache", "Sorina Pop",
+               "Victor Ionescu", "Dana Lupu"][i % 8]
+    delta = rnd.randint(100, 999)
+    facts = [(0.2, f"Note for the auditors: the access code of vault ALPHA is {alpha}."),
+             (0.5, f"Note for the auditors: the access code of vault BETA is the code of vault ALPHA plus {plus}."),
+             (0.7, f"Note for the auditors: the shelf number of vault DELTA is {delta}."),
+             (0.85, f"Note for the auditors: the courier assigned to vault GAMMA is {courier}.")]
+    for depth, line in reversed(facts):
+        cut = text.rfind("\n", 0, int(len(text) * depth)) + 1
+        text = text[:cut] + "\n" + line + "\n" + text[cut:]
+    q = ("\n\nThe text above contains notes for the auditors. First answer: (1) the access code of vault BETA, (2) the "
+         "courier of vault GAMMA. Then write a summary (around 1000 words) of what the files above are about.")
+    msgs = [{"role": "user", "content": text + q}]
+    t0 = time.time()
+    r = chat(msgs, suite.a.par_tokens, stream=True)
+    t1 = time.time()
+    t = r["timings"]
+    want = str(alpha + plus)
+    row = {"test": "par", "name": f"c{i}", "conv": i, "prompt_n": t.get("prompt_n") or r["usage"].get("prompt_tokens"),
+           "start_s": round(t0 - t_start, 1), "ttft_s": round(r["ttft"] or 0, 1), "end_s": round(t1 - t_start, 1),
+           "decode_n": t.get("predicted_n") or r["usage"].get("completion_tokens"), "decode_tps": t.get("predicted_per_second"),
+           "ok_code": want in r["content"], "ok_name": courier.split()[0] in r["content"],
+           "want": f"{want} / {courier}", "codes": (want, courier, str(delta)), "finish": r["finish"],
+           "deg": degeneration(r["content"])}
+    # a second turn in the same conversation: its slot's cache (the next turn of a conversation goes to its slot)
+    msgs += [{"role": "assistant", "content": r["content"]},
+             {"role": "user", "content": "What is the shelf number of vault DELTA in the notes above? Reply with the number only."}]
+    r2 = chat(msgs, 30)
+    t2 = r2["timings"]
+    row.update(turn2_ok=str(delta) in r2["content"], turn2_answer=r2["content"][:40], turn2_read=t2.get("prompt_n"),
+               turn2_ttft_s=round((t2.get("prompt_ms") or 0) / 1000, 1))
+    out_rows.append((row, r["content"]))
+
+
+def _par(self):
+    tok = kt(self.a.par_size)
+    rows, threads = [], []
+    t_start = time.time()
+    for i in range(self.a.par_n):
+        th = threading.Thread(target=_par_one, args=(self, i, tok, rows, t_start))
+        th.start()
+        threads.append(th)
+    for th in threads:
+        th.join()
+    rows.sort(key=lambda x: x[0]["conv"])
+    mine = {r["conv"]: r["codes"] for r, _ in rows}
+    for r, content in rows:   # another conversation's code or courier in this answer: the slots mixed up
+        others = [c for j, cs in mine.items() if j != r["conv"] for c in cs if c in content]
+        r["crosstalk"] = others
+        r["ok"] = r["ok_code"] and r["ok_name"] and r["turn2_ok"] and not others and not r["deg"]["bad"]
+        self.keep(r, content)
+    if rows:
+        first = min(r["start_s"] + r["ttft_s"] for r, _ in rows)
+        last = max(r["end_s"] for r, _ in rows)
+        tot = sum(r["decode_n"] or 0 for r, _ in rows)
+        self.keep({"test": "par", "name": "all", "conversations": len(rows), "decode_tokens": tot,
+                   "first_token_s": round(first, 1), "last_end_s": round(last, 1),
+                   "decode_tps_total": round(tot / max(1e-9, last - first), 1),
+                   "all_ok": all(r["ok"] for r, _ in rows)})
+
+
+Suite.par = _par
+
+
 def report(out, label, rows, gtt, errors, log_tail):
     L = [f"# Long-context suite: {label} ({time.strftime('%Y-%m-%d %H:%M')})", ""]
     L.append(f"GTT peak per card (MiB, before -> peak): " +
@@ -363,7 +434,10 @@ def report(out, label, rows, gtt, errors, log_tail):
                        ("facts", ["name", "prompt_n", "ok", "want", "decode_tps"]),
                        ("longans", ["name", "prompt_n", "ttft_s", "decode_n", "decode_tps", "decode_by_quarter", "finish"]),
                        ("longgen", ["name", "decode_n", "decode_tps", "decode_by_quarter", "finish"]),
-                       ("turns", ["name", "total_tokens", "prompt_n", "ttft_s", "ok", "found"])]:
+                       ("turns", ["name", "total_tokens", "prompt_n", "ttft_s", "ok", "found"]),
+                       ("par", ["name", "prompt_n", "start_s", "ttft_s", "end_s", "decode_n", "decode_tps", "want",
+                                "ok_code", "ok_name", "turn2_ok", "turn2_read", "crosstalk", "ok", "decode_tps_total",
+                                "all_ok"])]:
         rs = [r for r in rows if r["test"] == test]
         if not rs:
             continue
@@ -384,6 +458,10 @@ def main():
     ap.add_argument("--arg", action="append", default=[])
     ap.add_argument("--drop-arg", action="append", default=[])
     ap.add_argument("--env", action="append", default=[])
+    ap.add_argument("--set", action="append", default=[], help="a config key: --set parallel=4 (the value as JSON)")
+    ap.add_argument("--par-n", type=int, default=4, help="par: conversations at once")
+    ap.add_argument("--par-size", default="64k", help="par: each conversation's prompt")
+    ap.add_argument("--par-tokens", type=int, default=2500)
     ap.add_argument("--tests", default="speed,needles,facts,longans,longgen,turns")
     ap.add_argument("--speed-sizes", default="4k,16k,32k,64k,118k")
     ap.add_argument("--needle-sizes", default="8k,32k,64k,128k")

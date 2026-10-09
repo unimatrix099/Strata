@@ -1,0 +1,62 @@
+Based on the provided documentation, here are the answers to the specific questions followed by a summary of the files.
+
+### Specific Answers
+
+1.  **Access code of vault BETA:** **7857**
+    *   *Derivation:* The text states, "the access code of vault ALPHA is 3743." It later states, "the access code of vault BETA is the code of vault ALPHA plus 4114." Therefore, $3743 + 4114 = 7857$.
+2.  **Courier of vault GAMMA:** **Teodora Vlasic**
+    *   *Source:* The text explicitly states, "the courier assigned to vault GAMMA is Teodora Vlasic."
+
+***
+
+### Summary of Strata Documentation
+
+The provided documents constitute a comprehensive technical manual and performance benchmarking report for **Strata**, a high-performance inference engine designed to run large language models (LLMs), specifically the Qwen3.8-Flash-Next family, on consumer and professional hardware. The documentation covers installation, hardware compatibility (primarily AMD ROCm and NVIDIA CUDA), performance tuning, API usage, and advanced features like speculative decoding and multi-GPU splitting.
+
+#### Hardware Support and Performance Tuning
+
+A significant portion of the text focuses on optimizing Strata for AMD GPUs using the HIP backend (ROCm). The documentation details specific configurations for various Radeon architectures, including RDNA3 (gfx1100, e.g., RX 7900 XTX), RDNA4 (gfx1201, e.g., RX 9070 XT), and older RDNA2 (gfx1030).
+
+Key findings for AMD users include:
+*   **Memory Management:** A critical issue identified on the RX 7900 XTX was the accidental migration of VRAM to system RAM (GTT) due to driver behavior. The fix involved adjusting GPU order and increasing the VRAM reserve (`--vram-reserve-mib 3072`), which resulted in a massive speed increase (from ~14 tok/s to ~70 tok/s in decode).
+*   **Tuning Tables:** Strata uses hipBLASLt tuning tables to optimize matrix multiplication (GEMM) operations. These tables are architecture-specific and version-specific. The documentation provides instructions for generating these tables using `tune_hipblaslt` and lists shipped tables for various ROCm versions. Using the correct table can improve prompt processing speed by 1.5x to 2x.
+*   **Kernel Optimizations:** Specific switches like `STRATA_DENSE_MMQ` (using int8 kernels for dense projections) and `STRATA_HIP_WMMA` (using matrix cores on RDNA4) are detailed. These can significantly boost prompt throughput but may alter numerical precision, leading to slight divergences in greedy output compared to the default path.
+*   **Legacy Support:** The text also covers support for older architectures like gfx906 (Instinct MI50), which requires a specialized build using a CUDA-to-HIP compatibility layer, as standard ROCm releases no longer support these cards.
+
+#### Model Selection and Memory Requirements
+
+Strata supports several quantized versions of the Qwen3.8-Flash-Next model:
+*   **Q2_0:** Fastest, requires ~34 GB RAM for experts.
+*   **IQ2_XS:** Slightly better quality, similar speed.
+*   **IQ3_XXS:** Best quality, slower, requires ~43 GB RAM.
+*   **Coder:** A pruned version with half the experts, optimized for coding tasks, running on 32 GB RAM.
+*   **Swift 1.5:** A fine-tune designed to reduce "thinking" tokens, offering faster answers with minimal accuracy loss.
+
+The engine employs sophisticated memory management strategies:
+*   **Low-RAM Mode:** For systems with insufficient RAM to hold all experts, Strata can map experts from disk (`--mmap-experts`) or use a resident RAM budget (`--resident-experts`).
+*   **KV Streaming:** For long contexts (64K+), the KV cache is kept in system RAM, with only a window resident in VRAM, allowing more experts to fit on the GPU.
+*   **Expert Caching:** The engine dynamically swaps experts between VRAM and RAM based on usage patterns (`--adapt-every`).
+
+#### Multi-GPU and Batching
+
+Strata supports splitting model layers across multiple GPUs (`--layer-split`). This is particularly useful when a single card cannot hold all model experts.
+*   **Layer Split:** Layers are divided between cards. The documentation notes that splitting is only beneficial if the combined VRAM holds more experts than a single card. If one card can hold all experts, splitting often results in slower performance due to inter-GPU communication overhead.
+*   **Batching (`--batch`):** Strata can serve multiple requests concurrently by decoding them in parallel windows. This reduces latency for multiple users but may reduce per-request throughput on cards with limited VRAM, as batch slots consume VRAM that would otherwise be used for expert caching.
+
+#### API and Integration
+
+Strata exposes an OpenAI-compatible API (`/v1/chat/completions`) and an Anthropic-compatible API (`/v1/messages`). It also supports the newer OpenAI Responses API for tools like Codex CLI.
+*   **Features:** The API supports streaming, tool calling (including MCP servers), reasoning effort levels (none, low, medium, high), and thinking budgets.
+*   **Conversation Caching:** The engine maintains checkpoints of conversations to avoid re-reading prompts. It supports session files for saving and restoring state across restarts.
+*   **Vision:** Optional vision support is available via a separate encoder, which can run on the GPU or CPU.
+
+#### Experimental Features and Troubleshooting
+
+The documentation highlights several experimental or opt-in features:
+*   **Speculative Decoding:** Uses a draft layer to propose tokens, which are then verified by the main model. Switches like `STRATA_SPEC_COUPLED` and `STRATA_SPEC_GUMBEL` aim to improve draft acceptance rates.
+*   **Memory Reclaim Issues:** On Linux, kernel memory reclaim can suspend GPU queues, causing timeouts. Workarounds include setting `HSA_USERPTR_FOR_PAGED_MEM=0` or using `--mmap-experts` with specific pinned memory settings.
+*   **VRAM Elasticity:** An experimental feature allows dynamically shrinking the expert cache to free VRAM for other applications, at the cost of slower inference.
+
+#### Conclusion
+
+The Strata documentation presents a highly optimized, feature-rich inference engine tailored for users who need to run large MoE (Mixture of Experts) models on constrained hardware. It emphasizes the importance of precise hardware configuration, particularly for AMD GPUs, where driver behavior and memory management can drastically impact performance. The engine offers a balance between speed and quality through various quantization options and memory strategies, while providing robust API compatibility for integration into existing AI workflows.

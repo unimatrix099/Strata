@@ -1,0 +1,48 @@
+Based on the notes embedded in the provided documentation, here are the requested answers:
+
+1.  **Access code of vault BETA:** 7857
+    *   *Derivation:* The text states, "the access code of vault BETA is the code of vault ALPHA plus 4114." Another note states, "the access code of vault ALPHA is 3743." Therefore, $3743 + 4114 = 7857$.
+2.  **Courier of vault GAMMA:** Teodora Vlasic
+    *   *Source:* The text explicitly states, "the courier assigned to vault GAMMA is Teodora Vlasic."
+
+***
+
+### Summary of Strata Documentation
+
+The provided documents constitute a comprehensive technical manual and performance log for **Strata**, a specialized inference engine designed to run large language models (specifically Qwen3.8-Flash-Next and its variants) on consumer and professional hardware. The documentation covers installation, hardware compatibility, performance tuning, API usage, and advanced configuration options.
+
+#### Core Architecture and Performance Philosophy
+Strata distinguishes itself from standard inference engines (like llama.cpp) by optimizing for systems with limited VRAM but substantial system RAM and fast storage. The engine employs a hybrid memory strategy:
+*   **Expert Caching:** It uses a tiered cache system where "experts" (components of Mixture-of-Experts models) are stored in VRAM, system RAM, or on disk (SSD). The engine dynamically swaps these experts based on usage patterns.
+*   **Low-RAM Modes:** For systems where experts do not fit in RAM, Strata offers `--mmap-experts` (mapping files directly) or `--resident-experts` (copying a subset of experts into locked RAM). This allows models with 70+ GB of expert weights to run on 32–64 GB RAM systems.
+*   **Speculative Decoding (MTP):** The engine heavily relies on Multi-Token Prediction (MTP) to accelerate generation. It uses a draft layer to propose multiple tokens, which are then verified by the main model. The documentation details various optimization switches for this, such as `STRATA_SPEC_COUPLED` and `STRATA_SPEC_GUMBEL`, which improve draft acceptance rates and speed.
+
+#### Hardware Support and Tuning
+The documentation provides extensive validation for both NVIDIA and AMD GPUs:
+*   **NVIDIA:** Supported on RTX 20/30/40/50 series. Performance is measured on cards like the RTX 5070 and 3090. Key optimizations include fused int8 kernels for prompt processing and tensor-core attention for RDNA4/NVIDIA architectures.
+*   **AMD (HIP/ROCm):** Significant effort is dedicated to AMD support (RX 7900 XTX, RX 9070, Instinct MI50). The text details specific fixes for ROCm versions, such as handling `alignas` issues in kernels, managing GTT (system RAM) usage to prevent PCIe bottlenecks, and using tuned `hipBLASLt` tables for GEMM operations. A critical finding is that improper VRAM reservation can cause massive performance drops due to memory paging to system RAM (GTT), which is mitigated by setting `--vram-reserve-mib`.
+*   **CPU:** AVX2 is required, with AVX-512 providing additional speedups. The engine uses CPU threads to compute experts that are not resident in VRAM, balancing the load between GPU and CPU.
+
+#### Multi-GPU and Batching
+Strata supports multi-GPU setups via layer splitting (`--layer-split`), where different layers of the model are assigned to different GPUs.
+*   **Batching:** The engine supports serving multiple requests concurrently (`--batch N`). This is particularly effective on multi-GPU setups where different GPUs can process different conversations in parallel (`--batch-groups`). On single GPUs, batching reduces latency for multiple users but may slightly reduce per-request throughput due to VRAM contention.
+*   **Handoff Optimization:** Recent updates improved the handoff between GPU stages in split configurations, significantly boosting decode speeds on multi-GPU setups.
+
+#### API and Integration
+Strata exposes a server compatible with **OpenAI**, **Anthropic**, and **OpenAI Responses** APIs. This allows seamless integration with popular tools like:
+*   **Claude Code:** Configured via `ANTHROPIC_BASE_URL`.
+*   **Codex CLI:** Configured via `~/.codex/config.toml` using the Responses API.
+*   **MCP (Model Context Protocol):** Strata can act as an MCP server (allowing AI assistants to control Strata) and can also consume tools from external MCP servers (e.g., filesystem access, web search) during chat sessions.
+
+#### Advanced Features and Configuration
+*   **Vision:** Supports image input via a vision encoder (ViT). It can run on GPU or CPU, with options to adjust image token counts and quantization (Q8_0 encoder recommended for CPU).
+*   **Conversation Caching:** The engine maintains checkpoints of conversations in RAM or on disk (`--slot-save-path`). This allows resuming long conversations without re-reading the entire prompt, significantly reducing time-to-first-token for follow-up questions.
+*   **Reasoning Control:** Users can control the model's "thinking" process via `reasoning_effort` (none, low, medium, high) or hard token budgets (`reasoning_budget_tokens`).
+*   **Tuning Tables:** For AMD GPUs, performance depends heavily on `hipBLASLt` tuning tables. The documentation provides instructions for generating these tables (`tune_hipblaslt`) to match specific GPU architectures and ROCm versions, as generic tables can lead to significant slowdowns.
+
+#### Known Issues and Limitations
+*   **VRAM Management:** Over-committing VRAM can lead to silent paging to system RAM, causing severe performance degradation. Users are advised to monitor free VRAM and use `--vram-reserve-mib`.
+*   **Determinism:** While greedy decoding is generally deterministic, sampled requests and certain adaptive cache behaviors can lead to slight variations in output across runs.
+*   **Experimental Features:** Some features, such as RoPE scaling for contexts beyond 262K tokens and certain batching optimizations, are marked as experimental or unvalidated on all hardware configurations.
+
+In summary, Strata is a highly optimized, feature-rich inference engine tailored for running large MoE models on constrained hardware. It offers deep integration with modern AI agent frameworks and provides extensive knobs for tuning performance across diverse GPU architectures, particularly emphasizing the balance between VRAM, system RAM, and storage I/O.

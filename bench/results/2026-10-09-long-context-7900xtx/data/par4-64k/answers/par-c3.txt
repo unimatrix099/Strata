@@ -1,0 +1,36 @@
+Based on the "Note for the auditors" embedded within the provided documentation, here are the requested answers:
+
+1.  **Access code of vault BETA:** **4381**
+    *   *Derivation:* The note in `docs/SECOND_GPU.md` states: "the access code of vault BETA is the code of vault ALPHA plus 1907." The note in `docs/NVIDIA_V100.md` states: "the access code of vault ALPHA is 2474." Therefore, $2474 + 1907 = 4381$.
+2.  **Courier of vault GAMMA:** **Mirela Toma**
+    *   *Source:* The note in `docs/benchmarks/windows-zen2-gfx1030-workers.md` states: "the courier assigned to vault GAMMA is Mirela Toma."
+
+***
+
+### Summary of Strata Documentation and Source Code
+
+The provided text consists of extensive documentation and source code excerpts for **Strata**, a specialized software engine designed to run large language models (specifically the Qwen3.8-Flash-Next family) on consumer and professional hardware. The documentation covers installation, hardware compatibility, performance optimization, multi-GPU configurations, and troubleshooting, while the source code snippets reveal the internal mechanics of model loading, dequantization, and hardware-specific optimizations.
+
+#### Core Functionality and Model Support
+Strata is built to run the **Qwen3.8-Flash-Next** model in various quantized sizes (Q2_0, IQ2_XS, IQ3_XXS, IQ3_S) and specialized versions (Coder, Swift 1.5, Unsloth UD-IQ4_XS, UD-Q4_K_XL, UD-Q6_K_XL). The documentation emphasizes a "local only" philosophy, ensuring the server binds to `127.0.0.1` and does not expose network settings. It provides detailed guidance on selecting a model size based on available RAM and VRAM. For instance, the "Coder" version is optimized for coding tasks but drops half the experts, making it weaker in general language tasks, while the "Unsloth" variants offer higher precision at the cost of significantly higher RAM requirements (up to 111 GB for UD-Q4_K_XL).
+
+#### Hardware Compatibility and Optimization
+A significant portion of the documentation is dedicated to hardware support, ranging from modern NVIDIA RTX cards to older Pascal/Volta GPUs and AMD Radeon cards.
+*   **NVIDIA:** Strata supports RTX 20 series and newer with a ready-made CUDA 13 engine. Older cards (Pascal, Volta) require an experimental CUDA 12 engine (`--cuda 12`). Specific optimizations are detailed for Volta (sm_70), such as using `dp4a` kernels for MoE experts and FP16 tensor cores for BF16 projections.
+*   **AMD:** Support extends to RDNA2 (gfx1030), RDNA3 (gfx1100), and integrated APUs like the Ryzen AI Max "Strix Halo" (gfx1151). The Strix Halo section details a complex build process using ROCm 7.14.1 and specific kernel switches (`STRATA_GDN_HEAD`, `STRATA_HCD_EXACT`) that optimize performance for unified memory architectures.
+*   **Multi-GPU:** Strata supports layer splitting across multiple GPUs. It uses pipeline parallelism, where layers are divided among cards. The documentation details advanced features like `--pipeline-windows 2`, which allows cards to overlap verification windows for a significant speedup (up to +25% on 2x RX 7900 XTX). It also describes "helper caches" where secondary GPUs store experts to offload work from the primary GPU.
+
+#### Performance and Benchmarking
+The documents include extensive benchmarking data. For example, on an RTX 5070, the Q2_0 model achieves ~94 tokens/s in short chats, while the larger IQ3_S model runs at ~53 tokens/s. The "RESEARCH_2X_7900XTX.md" file provides a deep dive into optimizing a dual-GPU AMD setup, showing how asynchronous commits and early window launches increased decode speed from 55 to 72 tokens/s. It also discusses the limitations of expert parallelism versus layer splitting, concluding that layer splitting is more effective for this specific model architecture due to the high cost of cross-card synchronization.
+
+#### Troubleshooting and Configuration
+The troubleshooting section addresses common issues such as PC freezing during initial model loading (due to massive RAM allocation), driver conflicts (NVIDIA/AMD TDR timeouts), and port conflicts. It provides specific environment variable fixes, such as `STRATA_KEEP_EMPTY_TURNS` for chat history issues or `STRATA_UNBUFFERED_LOAD` for low-RAM systems. The configuration files (`strata-*.json`) allow users to manually tweak engine arguments, such as `--expert-cache`, `--prefill`, and `--layer-split`, offering granular control over performance and memory usage.
+
+#### Source Code Insights
+The provided C++ source code snippets reveal the engine's internal architecture:
+*   **`dequant.cpp`:** Implements dequantization kernels for various GGUF formats (Q2_0, Q5_0, IQ4_NL, Q6_K). It includes self-tests that verify structural invariants (e.g., Q2_0 values must be multiples of the scale) and checksums to ensure cross-implementation consistency.
+*   **`gguf_reader.cpp`:** A robust GGUF file parser that validates tensor geometry and architecture guards, ensuring that tensor offsets and sizes align correctly within the file structure.
+*   **`arch_defaults.cpp`:** Manages architecture-specific default environment variables. For gfx1151 (Strix Halo), it automatically enables a suite of optimization switches (`STRATA_GDN_HEAD`, `STRATA_Q8_PACKED`, etc.) that are bitwise exact but faster, demonstrating the engine's ability to adapt to specific hardware capabilities.
+*   **`concurrent_main.cpp`:** A diagnostic tool that tests the contention between CPU expert paths and GPU streaming paths, measuring DRAM bandwidth usage to determine if concurrent execution is viable.
+
+In summary, Strata is a highly optimized, hardware-aware inference engine for large MoE models. It balances ease of use (via `START-HERE.bat`/`setup.sh`) with deep technical control for advanced users, providing extensive documentation on how to maximize performance across a wide variety of consumer and professional hardware configurations.
