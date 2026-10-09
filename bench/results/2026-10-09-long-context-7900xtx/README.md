@@ -16,6 +16,53 @@ were read. The text is the repository's own docs and source (`tools/needle_bench
 per test so the prompt cache does not help. Raw rows in `data/results.jsonl`, the table in `data/report.md`, every
 answer in `data/answers/`.
 
+## Speed summary (two runs: run 1 / run 2)
+
+The production setup (ROCm 7.9, the installed config; run 2 with the conversation cache on). From `data/results.jsonl`
+(run 1) and `data/rocm/full79-cc/results.jsonl` (run 2).
+
+**Bigger prompts: reading speed and the wait for the first token**
+
+| prompt | prompt reading | first token after | decode (a short answer) |
+|---|---|---|---|
+| 4K | 915 / 911 tok/s | 4.6 / 4.6 s | 89 / 94 tok/s |
+| 15K | 1,100 / 1,304 tok/s | 13.7 / 11.7 s | 100 / 94 tok/s |
+| 30K | 1,097 / 1,177 tok/s | 27.2 / 25.5 s | 95 / 88 tok/s |
+| 62K | 1,205 / 1,202 tok/s | 51.4 / 51.6 s | 92 / 91 tok/s |
+| 121K | 1,119 / 1,200 tok/s | 108 / 101 s | 74 / 78 tok/s (a ~110-145-token answer: the pipeline's start weighs more; long answers at this size run 92-96) |
+
+**A big prompt and a long answer (a ~3,000-word report)**
+
+| prompt | answer | decode | by quarter of the answer |
+|---|---|---|---|
+| 32K | 2,683 / 2,784 tokens | 101 / 104 tok/s | 105 106 100 95 / 106 105 101 104 |
+| 67K | 2,803 / 2,624 tokens | 95 / 96 tok/s | 95 95 95 95 / 91 99 101 96 |
+| 122K | 2,960 / 2,794 tokens | 92 / 96 tok/s | 89 91 92 98 / 97 96 96 96 |
+
+**Long outputs from a short prompt (16,000 tokens allowed)**
+
+| task | tokens | decode | by quarter |
+|---|---|---|---|
+| story, greedy | 9,055 / 8,632 | 101 / 104 tok/s | 93 99 101 114 / 91 94 98 151 |
+| story, temperature 0.7 | 11,073 / 13,032 | 105 / 93 tok/s | 88 91 118 141 / 87 90 92 103 |
+| program + tests, greedy | 16,000 / 16,000 | 153 / 153 tok/s | 147 155 155 154 / 150 154 154 153 |
+| program + tests, temperature 0.7 | 14,469 / 16,000 | 140 / 140 tok/s | 133 141 140 145 / 141 155 150 122 |
+
+**A conversation's turns (24K-token parts; the conversation cache's switches)**
+
+| conversation | read this turn | first token after |
+|---|---|---|
+| 23K | 23K | 17 s |
+| 48K | 25K (the new part) | 20 s |
+| 72K | 24K | 18 s |
+| 96K | 24K | 23 s |
+| switching between three 64K conversations | 31-33 tokens | 0.7-1.3 s (50-58 s without the conversation cache) |
+
+Prompt reading holds 1,100-1,300 tok/s to 121K, so the first token waits ~25 s at 32K, ~50 s at 64K and ~100 s at
+121K. Decode drops little with the context (~100 tok/s at 32K, 92-96 at 122K); long outputs do not slow down; code
+decodes fastest (~150 tok/s: its tokens are drafted right more often), and a rise at the end of a story is the
+drafter getting its closing lines right, not the hardware.
+
 ## Result
 
 **No garbage and no drift at any length.** Every recall and reasoning check passed up to 127K tokens; long answers
