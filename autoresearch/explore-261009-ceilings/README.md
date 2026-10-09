@@ -205,6 +205,8 @@ Decode (105 tok/s; the structural ceiling ~250-300, the bandwidth roofline 600):
    Drafts accepted 77%, 1.85 tokens per window: a drafter that got 2.5 would be +35% at the same window time, and it
    would also raise the pipeline's right guesses (49%) - the single largest lever, and the one set aside (a new draft
    model, e.g. a self-distilled MTP head: FastMTP's 2nd / 3rd draft acceptance 11 -> 56%, 2 -> 36%).
+   Measured since (section 8): the cheap half of this - checking a weak first draft instead of none (half the windows
+   carry no draft under the 0.7 floor) - returns nothing over eight prompts; the drafts offered are already 82-94% right.
 2. **Fewer kernels per window** (938 per card): the launch gaps equal the bandwidth floor. Merging a layer's small
    kernels (the quantize, norm, doorbell, copy kernels) was measured at ~1% each on 07 Oct; a layer-level persistent
    kernel (megakernel) is the real version: +20-30% possible, weeks of work in the kernels.
@@ -223,6 +225,17 @@ exact protocol 18.25 / 19.07 ms per window without, 18.56 / 19.62 with; the inst
 The CPU-flag wait went, the A / B waits stayed (the groups are rarely all resident at 98-99% hits per expert, and the
 doorbell ring stays under `always_publish`). No gain: the code was not kept.
 
+Read (not built), 09 Oct evening: **device-planned layers that fetch their own misses** - the device plans a group from
+its residency table and copies the one or two experts it lacks from the pinned arena itself (`fetch_blobs` /
+`rebase_ptrs` already copy blobs from mapped host pointers into the staging ring; only a device-visible address table
+of the arena, ~250 KB, is missing; `STRATA_ARENA_MMAP` has no such addresses). What it would save is the waits, ~40-60 us
+per layer group; what it would add is one PCIe copy per missed expert on the critical path, 2.3 MB at 7 GB/s = ~0.33 ms -
+six times the wait it removes - unless the miss is known a layer early, which needs a router prediction (upstream's
+Foresight `STRATA_FS_SLOTS` does exactly that refill on a copy stream and measured 0.91-1.00x on every card tried,
+docs/DETAILS.md). Not pursued. Noted on the way: the E-6 device plan skips layer 0's flag wait but layer 1 copies the
+PLE rows the host gathers after serving layer 0 (`m_ple_`, verify.cpp ~839) - a race if E-6 were turned on with
+per-layer embeddings; an unconditional `wait_flag_ge(m_flag_, 1)` would close it.
+
 Prompt reading (1,400 tok/s; the practical ceiling 4,200):
 
 1. **`STRATA_PF_FUSED=1`: +45% measured today.** Not bit-identical; to adopt it in production, run the long-context
@@ -239,10 +252,54 @@ Prompt reading (1,400 tok/s; the practical ceiling 4,200):
    larger share on 8-16K prompts): a smaller first chunk, or `STRATA_PREFILL_HELP` extended past one-chunk prompts.
 7. Card 2's prompt timeline on HIP, so the cadence's bound is known.
 
+## 8. The drafter's gate (09 Oct, late evening; `~/strata-tools/d1.sh`-`d6.sh`, results `D1-`-`D5-` in `data/results.jsonl`)
+
+What the window carries. `STRATA_SPEC_DEPTH=1` counts the drafts by depth, but only in the serial loop (the
+`--pipeline-windows` loop has no counters), so this was read with the pipeline off (`--spec 3 --spec-min-p 0.7`, 512-token
+story and code, greedy):
+
+| | story | code |
+|---|---|---|
+| draft 1 accepted / offered | 131 / 159 (82%) | 131 / 143 (92%) |
+| draft 2 accepted / offered | 49 / 69 (71%) | 94 / 100 (94%) |
+| windows with no draft at all | ~50% (316 windows, 159 with a draft) | ~48% (273, 143) |
+| with `--spec 4`: draft 3 | 23 / 27 (85%) | 44 / 47 (94%) |
+
+`--spec-min-p 0.7` gates the first draft like the others: whenever the draft layer's probability for its first guess is
+under 0.7 the window commits one token and nothing is checked - about half of all windows. The drafts it does offer are
+accepted 82-94%. (Under the pipeline the same shows as 277 drafts offered over ~312 windows.)
+
+Measured (pipelined, the installed config, `bench.py` 2 reps story / code tok/s, then `bench_many.py` eight prompts in
+alternating rounds, the mean over the eight; one row costs card 1 ~1.1-1.3 ms of its ~10.6 ms window):
+
+| rule | story / code (2 reps) | eight prompts, ratio to the unchanged rule per round |
+|---|---|---|
+| unchanged: 0.7 for every draft | 89 / 101, 94 / 106 | 1 |
+| `--spec 2 --spec-min-p 0` (exactly one draft, always) | 90 / 103 | - |
+| `--spec-min-p 0.4` for every draft | 88 / 111 | 0.945, 0.989 |
+| `--spec-min-p 0` (every draft, always) | 86 / 96 | - |
+| the first draft always, the others at 0.7 (`STRATA_SPEC_MIN_P0=0`, a 20-line opt-in) | - | 0.964, 1.067, 0.980, 0.969, 0.981 (20 of 40 prompts faster) |
+| the first draft at 0.3, the others at 0.7 | 88 / 120 | 0.963, 0.990 |
+| the first draft at 0.5, the others at 0.7 | 89 / 126 | - |
+
+The two-prompt numbers promised +15-20% on code; over eight prompts and five rounds the first-draft rule came out at
+0.99 of the unchanged rule (means 108.0 against 109.1 tok/s), and a 0.4 floor for every draft at 0.97. The extra row is
+cheap, but a first draft under 0.7 is accepted too rarely to pay for it, and under the pipeline a longer window A also
+moves window B's guess. Dropped; the opt-in was not kept (the diff: a per-depth floor in the five window-size rules of
+generate.cpp - `t_rule`, the two `decided` loops, the serial loop and the plain generate loop).
+
+Noise: the eight-prompt mean of the unchanged rule varied 105.6-112.3 between rounds (story 93.6-120.9), so any decode
+claim under ~5% needs the alternating rounds, as the test list says.
+
+Also found: `STRATA_MTP_TOP2=1` (the runner-up diagnostic for tree drafts) is dead code in this tree - `record_top2` is
+never called, its counts stay 0 - and the verify window has no attention mask, so a tree draft (two second-token
+candidates checked at once) would be a new kernel path, not a flag. The drafter lever that remains is a better draft
+model (section 6, item 1).
+
 ## Files
 
 `gpu_bw.cpp`, `cpu_bw.cpp`, `gemm_tflops.cpp` (the micro-benchmarks and their outputs `*.txt`), `roofline.txt` (the
-cost model), `data/decode-profile.txt` (the per-stage decode profile), `data/pf-*/` (each prompt variant's timing, speed
+cost model), `d1.sh`-`d6.sh` + `data/drafter-gate.jsonl` + `data/drafter-depth-serial.txt` (section 8), `data/decode-profile.txt` (the per-stage decode profile), `data/pf-*/` (each prompt variant's timing, speed
 and answer), `data/results.jsonl` (the helper test), `pfvar.sh` / `vprof.sh` (how they ran).
 
 ## Tests still to run (the long ones, later)

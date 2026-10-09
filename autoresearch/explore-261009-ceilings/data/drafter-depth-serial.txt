@@ -1,0 +1,20 @@
+strata serve: spec depth: accepted/tested 9/11 2/3 2/2 0/0 0/0
+strata serve: prompt 77 tokens = 0 reused + 77 read in 732 ms (105.2 tok/s), 512 generated in 7057 ms (72.5 tok/s), drafts accepted 218 of 287, 1 checkpoints
+strata serve: spec depth: accepted/tested 133/155 47/64 23/27 0/0 0/0
+strata serve: prompt 83 tokens = 0 reused + 83 read in 586 ms (141.5 tok/s), 512 generated in 6573 ms (77.9 tok/s), drafts accepted 247 of 295, 1 checkpoints
+strata serve: spec depth: accepted/tested 110/123 70/78 44/47 0/0 0/0
+strata serve: spec depth: accepted/tested 10/12 3/4 0/0 0/0 0/0
+strata serve: prompt 77 tokens = 0 reused + 77 read in 744 ms (103.5 tok/s), 512 generated in 7307 ms (70.1 tok/s), drafts accepted 202 of 268, 1 checkpoints
+strata serve: spec depth: accepted/tested 137/164 51/70 0/0 0/0 0/0
+strata serve: prompt 83 tokens = 0 reused + 83 read in 587 ms (141.3 tok/s), 512 generated in 6639 ms (77.1 tok/s), drafts accepted 236 of 263, 1 checkpoints
+strata serve: spec depth: accepted/tested 131/146 86/90 0/0 0/0 0/0
+strata serve: spec depth: accepted/tested 9/11 2/3 2/2 0/0 0/0
+strata serve: prompt 77 tokens = 0 reused + 77 read in 735 ms (104.8 tok/s), 512 generated in 7087 ms (72.2 tok/s), drafts accepted 218 of 287, 1 checkpoints
+strata serve: spec depth: accepted/tested 133/155 47/64 23/27 0/0 0/0
+strata serve: prompt 83 tokens = 0 reused + 83 read in 581 ms (142.9 tok/s), 512 generated in 6744 ms (75.9 tok/s), drafts accepted 238 of 302, 1 checkpoints
+strata serve: spec depth: accepted/tested 99/112 57/66 38/43 0/0 0/0
+strata serve: spec depth: accepted/tested 10/12 3/4 0/0 0/0 0/0
+strata serve: prompt 77 tokens = 0 reused + 77 read in 760 ms (101.3 tok/s), 512 generated in 7328 ms (69.9 tok/s), drafts accepted 196 of 267, 1 checkpoints
+strata serve: spec depth: accepted/tested 131/159 49/69 0/0 0/0 0/0
+strata serve: prompt 83 tokens = 0 reused + 83 read in 589 ms (141.0 tok/s), 512 generated in 6575 ms (77.9 tok/s), drafts accepted 239 of 273, 1 checkpoints
+strata serve: spec depth: accepted/tested 131/143 94/100 0/0 0/0 0/0
