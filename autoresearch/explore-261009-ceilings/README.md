@@ -105,6 +105,18 @@ bound (from the engine's start lines): card 2 holds 8,398 of its 10,752 expert p
 it streams ~22% of 21 layers' experts, ~4 GB over PCIe (~0.6 s), against card 1's ~1.2 GB (~0.17 s). Card 1's
 "waiting for each chunk" (1.1-1.5 s per 32K prompt) is that difference; a later layer split (section 5) shortens it.
 
+**With the production path (fused + WMMA, `data/s7-base`, `data/s9-split27`):** card 1's whole-prompt timeline 8.5-8.6
+s for a 32K prompt (2.15 s per chunk: expert GEMMs 25%, combine 16%, GDN ~20%, attention 10%, hyper-connection read
+8%), card 2 1.75-1.79 s of GPU time per chunk (expert GEMMs 23%, **waiting for streamed experts 14%**, attention 14%,
+GDN 20%) - each stage prints its own timing lines, the "8192 tokens" ones are card 2's. The server's progress shows
+the first chunk done after 5 s (the two stages one after the other) and then **one chunk every 2.0 s (~4,000 tok/s in
+the steady state)**; a 32K prompt's 11.6 s are the serial first chunk, three more at 2 s, and card 2's last. Card 1
+still blocks 1.2-1.7 s per 32K prompt in the PLE row lookups (`ple_land`, the host line's "PLE"), ~0.3-0.4 s of each
+chunk: the exact fix is to gather them further ahead or in parallel (the next code item) - or no code at all: the PLE reader
+reads the 28.8 GB table from the SSD with one I/O thread (`src/ngram/ple_reader.cpp`), and the engine already has
+`--ple-io ram` (the table mapped and locked in RAM; ~70 GB were free in every run here). **Next test: `--ple-io ram`
+on a 32K prompt** (expected: the 1.2-1.7 s of PLE blocking per 32K gone, ~+15% on long prompts; exact).
+
 ## 5. Measured today: switches on the prompt path (32K prompt, the installed config)
 
 | setting | prompt tok/s | first token after | card 1 GPU time |
@@ -220,6 +232,11 @@ cost model), `data/decode-profile.txt` (the per-stage decode profile), `data/pf-
 and answer), `data/results.jsonl` (the helper test), `pfvar.sh` / `vprof.sh` (how they ran).
 
 ## Tests still to run (the long ones, later)
+
+Started 09 Oct, evening, unattended (`~/strata-tools/long1.sh`; results land in `~/strata-tools/longctx/final-full`,
+`final-par4`, `final-cc` and `~/strata-tools/data/results.jsonl` as `FIN-*`): the full long-context suite of the final
+config, eight-prompt decode pairs against the config before today's prompt switches, 4 x 64K at once, the conversation
+cache. Not yet read.
 
 The loop now uses short tests (16K prompts, 256-token decodes, one run each) to find candidates; before any of them
 goes into the production config it needs the long checks:
