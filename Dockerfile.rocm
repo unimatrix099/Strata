@@ -1,0 +1,63 @@
+# syntax=docker/dockerfile:1
+#
+# Strata on AMD GPUs (ROCm / HIP, Linux): the fork's production setup for 2x RX 7900 XTX (gfx1100), usable for any
+# RDNA2/3/4 card by its architecture. Guide: docs/DOCKER_ROCM.md. Compose: docker-compose.rocm.yml.
+#
+# The engine is compiled during docker build exactly the way setup.py compiles it on a Linux PC without a system ROCm:
+# ROCm comes from AMD's TheRock wheels into .venv (~10 GB), the engine is built for HIP_ARCHS. docker build has no
+# GPU, so the architectures are given here (gfx1100 = RX 7900 XT/XTX/GRE; gfx1101/1102 = RX 7600-7800; gfx1200/1201 =
+# RX 9060/9070; gfx1030 = RX 6800/6900; several with ';').
+#
+# Build:   docker build -f Dockerfile.rocm -t strata-rocm .
+# Run:     docker compose -f docker-compose.rocm.yml up -d      (the env vars: docker/rocm.env.example)
+#
+# Only the model files, the prepared pack, the MTP layer and the install config live in the /data volume; the
+# engine and ROCm are part of the image.
+
+FROM ubuntu:24.04
+
+# STRATA_EXECV=1: setup.py replaces itself with the server, so the server is PID 1 and docker stop's SIGTERM reaches it
+ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 LANG=C.UTF-8 STRATA_EXECV=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential ca-certificates curl git libatomic1 libgomp1 libnuma1 libelf1 libdrm2 libdrm-amdgpu1 \
+        pciutils python3 python3-pip python3-venv unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/strata
+COPY . .
+
+ARG HIP_ARCHS=gfx1100
+ARG BUILD_VISION=0
+ENV HIP_ARCHS=${HIP_ARCHS}
+
+RUN python3 -m venv .venv \
+    && .venv/bin/pip install --no-cache-dir --upgrade pip \
+    && .venv/bin/pip install --no-cache-dir -r requirements.txt \
+    && chmod +x setup.sh docker/rocm-entrypoint.sh
+
+# llama.cpp at the pinned commit, ROCm (TheRock wheels for the cards' family) and the HIP engine, through setup.py's
+# own functions; BUILD.json (written by build_engine_hip) is what setup.py reads to reuse the engine at start.
+# Native code for the CPU that builds the image: build it on the PC it runs on.
+RUN .venv/bin/python - <<'PYEOF'
+import os
+import setup
+
+archs = [a.strip() for a in os.environ.get("HIP_ARCHS", "gfx1100").replace(",", ";").split(";") if a.strip()]
+llama = setup.get_llama_cpp()
+vision = "cpu" if os.environ.get("BUILD_VISION", "0") == "1" else "none"
+setup.build_engine_hip({"arch": archs[0], "archs": archs}, llama, vision)
+PYEOF
+
+# the cmake tree is build-time only
+RUN rm -rf build-hip
+
+VOLUME ["/data"]
+EXPOSE 8080
+
+# /health is answered before the API key gate. The port opens only after the model loads (1-3 minutes; a first start
+# downloads ~45-70 GB first), so the start period is long.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=900s --retries=3 \
+  CMD curl -fs "http://127.0.0.1:${PORT:-8080}/health" || exit 1
+
+ENTRYPOINT ["./docker/rocm-entrypoint.sh"]

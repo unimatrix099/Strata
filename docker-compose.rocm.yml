@@ -1,0 +1,39 @@
+# Strata on AMD GPUs with Docker Compose (docs/DOCKER_ROCM.md).
+#
+#   cp docker/rocm.env.example .env        # then edit .env: the GIDs, the data folder, the API key
+#   docker compose -f docker-compose.rocm.yml up -d --build
+#   docker compose -f docker-compose.rocm.yml logs -f
+#
+# The API: http://<BIND>:<PORT>/v1 (OpenAI) and /v1/messages (Anthropic); the web chat at http://<BIND>:<PORT>/.
+services:
+  strata:
+    build:
+      context: .
+      dockerfile: Dockerfile.rocm
+      args:
+        HIP_ARCHS: ${HIP_ARCHS:-gfx1100}
+    image: strata-rocm:latest
+    container_name: strata
+    env_file: .env
+    # the AMD GPU interface: the compute device and the cards' render nodes
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    # the host's video and render groups own those devices: their numeric IDs (getent group video render)
+    group_add:
+      - "${VIDEO_GID:-44}"
+      - "${RENDER_GID:-992}"
+    security_opt:
+      - seccomp=unconfined
+    ipc: host
+    # Strata pins tens of GB of RAM for the GPUs (the experts and the K/V copy)
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    # published on localhost only by default; BIND=0.0.0.0 opens it to the network - set API_KEY first
+    ports:
+      - "${BIND:-127.0.0.1}:${PORT:-8080}:${PORT:-8080}"
+    volumes:
+      - "${STRATA_DATA_DIR:-./strata-data}:/data"
+    restart: unless-stopped

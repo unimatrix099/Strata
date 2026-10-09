@@ -59,6 +59,12 @@ all than one at a time (16.7 tok/s in all for 4). Switching between three 64K co
 0.7-1.3 s with `--conversation-cache-mib 16384 --conversation-cache-slots 4` (the same answers; 1.5-2.4 GB of RAM per
 parked conversation).
 
+## Docker (AMD)
+
+`Dockerfile.rocm` + `docker-compose.rocm.yml` + one `.env` file (`docker/rocm.env.example`) run the production setup in
+a container, with the tuned settings as env vars: [docs/DOCKER_ROCM.md](docs/DOCKER_ROCM.md). Written 09 Oct, not yet
+built or run (to be tested on the PC).
+
 ## What was tested (summary, 09 Oct)
 
 All on this PC (2x RX 7900 XTX, IQ3_XXS); the details are in the linked folders and in
