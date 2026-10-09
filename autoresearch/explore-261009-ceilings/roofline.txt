@@ -1,0 +1,9 @@
+card 1 (layers 0-26): dense 1,925 MB + experts 878 MB = 2,803 MB per window -> 3.06 ms at 917 GB/s
+card 2 (layers 27-47 + head): dense 1,934 MB + experts 681 MB = 2,615 MB per window -> 2.85 ms at 917 GB/s
+prompt FLOPs per token: 13.2 GFLOP (experts 4.7, dense 8.5); head once 1.27
+  card 1 compute floor at spec 123 TFLOPS: 60.3 us/token -> 16,590 tok/s (pipelined with card 2)
+  card 1 compute floor at practical 31 TFLOPS: 239.2 us/token -> 4,181 tok/s (pipelined with card 2)
+experts streamed per 8192-token chunk (12% not resident): 5.1 GB -> 0.73 s -> 11,266 tok/s ceiling
+decode bandwidth floor, both cards serial: 5.9 ms/window; pipelined max(card): 3.1 ms
+  at 1.44 tokens/window: serial 244 tok/s, pipelined 472 tok/s
+  at 1.85 tokens/window: serial 314 tok/s, pipelined 606 tok/s

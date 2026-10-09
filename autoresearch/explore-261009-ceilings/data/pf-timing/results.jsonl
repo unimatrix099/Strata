@@ -1,0 +1,3 @@
+{"test": "speed", "name": "8k", "prompt_n": 8201, "prompt_tps": 990.1, "ttft_s": 8.3, "decode_n": 113, "decode_tps": 88.5, "deg": {"chars": 727, "words": 91, "comp_min": 0.589, "comp_med": 0.589, "rep8_max": 1, "tail_loop": "", "bad_char_frac": 0.0, "cjk_frac": 0.0, "bad": false, "why": []}, "label": "pf-timing", "at": "17:39:10"}
+{"test": "speed", "name": "32k", "prompt_n": 31842, "prompt_tps": 1690.6, "ttft_s": 18.8, "decode_n": 154, "decode_tps": 93.7, "deg": {"chars": 884, "words": 113, "comp_min": 0.597, "comp_med": 0.597, "rep8_max": 1, "tail_loop": "", "bad_char_frac": 0.0, "cjk_frac": 0.0, "bad": false, "why": []}, "label": "pf-timing", "at": "17:39:31"}
+{"test": "system", "name": "ram", "mem_available_min_gib": 75.6, "label": "pf-timing", "at": "17:39:32"}

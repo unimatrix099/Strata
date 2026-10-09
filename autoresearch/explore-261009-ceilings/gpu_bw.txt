@@ -1,0 +1,16 @@
+== device 0: AMD Radeon RX 7900 XTX, 48 CUs, 2526 MHz, mem 1249 MHz x 384-bit (theoretical 120 GB/s), L2 6144 KB
+  VRAM read kernel,   192 blocks x 256:   916.7 GB/s
+  VRAM read kernel,   768 blocks x 256:   902.5 GB/s
+  VRAM read kernel,  3072 blocks x 256:   916.0 GB/s
+  hipMemcpy D2D (read+write):         791.3 GB/s
+  pinned host -> device (PCIe):        7.08 GB/s
+  device -> pinned host (PCIe):        7.15 GB/s
+== device 1: AMD Radeon RX 7900 XTX, 48 CUs, 2526 MHz, mem 1249 MHz x 384-bit (theoretical 120 GB/s), L2 6144 KB
+  VRAM read kernel,   192 blocks x 256:   915.9 GB/s
+  VRAM read kernel,   768 blocks x 256:   917.8 GB/s
+  VRAM read kernel,  3072 blocks x 256:   924.4 GB/s
+  hipMemcpy D2D (read+write):         787.2 GB/s
+  pinned host -> device (PCIe):        7.08 GB/s
+  device -> pinned host (PCIe):        7.15 GB/s
+== card 0 -> card 1 (hipMemcpy, peer access yes):    7.01 GB/s
+== card 1 -> card 0 (hipMemcpy, peer access yes):    7.01 GB/s

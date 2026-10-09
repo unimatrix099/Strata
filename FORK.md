@@ -124,6 +124,11 @@ All on this PC (2x RX 7900 XTX, IQ3_XXS); the details are in the linked folders 
 **Use:** `"parallel"` for short-context agents; long contexts one at a time, with the conversation cache for switching
 (on in the production config).
 
+Ceilings (09 Oct, [autoresearch/explore-261009-ceilings](autoresearch/explore-261009-ceilings/README.md)): VRAM 917 GB/s
+per card, PCIe 7.1 GB/s, RAM 45 GB/s; decode runs at ~17-30% of its bandwidth roofline (~938 kernels per window per
+card: the launch gaps equal the bandwidth floor), prompt reading at a third of the practical compute ceiling;
+`STRATA_PF_FUSED=1` read a 32K prompt +45% faster (not bit-identical, quality to check before production).
+
 ## History
 
 | date | what | result |
@@ -139,6 +144,7 @@ All on this PC (2x RX 7900 XTX, IQ3_XXS); the details are in the linked folders 
 | 08 Oct | rebased onto upstream's `main` (393 new commits); duplicates of upstream's own work dropped | same text, same speed |
 | 08 Oct | the drafter's stream priority on ROCm (found while preparing `pr/two-gpu-split`) | no more slow engine starts |
 | 09 Oct | long-context quality and speed up to 128K | no garbage or drift; recall and reasoning all right |
+| 09 Oct | the hardware ceilings and the roofline for decode and prompt reading; prompt-path switches measured | `STRATA_PF_FUSED=1` +45% on prompts (not exact) |
 
 ## Bringing in upstream's changes
 

@@ -1,0 +1,6 @@
+ 1 threads:   30.4 GB/s read
+ 2 threads:   44.4 GB/s read
+ 4 threads:   45.9 GB/s read
+ 8 threads:   42.9 GB/s read
+16 threads:   44.1 GB/s read
+32 threads:   42.0 GB/s read

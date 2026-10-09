@@ -241,3 +241,15 @@ tokens (a story and a program, greedy and sampled) coherent; a conversation grow
 four codenames, each turn reading only its new part. No engine error, no GTT spill. Prompt reading 1,100-1,200 tok/s,
 the first token after 108 s at 121K; beyond 32K the attention cache streams from RAM and 92-96% of its reads still hit
 VRAM.
+
+## 11. The ceilings (09 Oct; autoresearch/explore-261009-ceilings)
+
+Measured: VRAM reads 917 GB/s per card (spec 960), every PCIe path 7.1 GB/s (3.0 x8), CPU RAM 45 GB/s; the engine's
+expert GEMMs 31 TFLOPS (spec 123). A decode window reads ~2.8 GB on card 1 and ~2.6 GB on card 2 (3.1 / 2.9 ms at
+bandwidth); the cards take 10.6 / 9.8 ms: ~29% of bandwidth each, with ~938 kernels per window per card whose launch
+gaps (3-4 ms) equal the bandwidth floor. Roofline 314 tok/s serial, 606 overlapped; measured 105. Prompt reading:
+practical compute ceiling ~4,200 tok/s, measured 1,100-1,460 (card 1 alone 1,880; the chunk cadence 2,050); card 1's
+32K time is attention 16%, expert GEMMs 17% (at the ceiling), dequant 13-18%, host grouping 9-14%, combine 8%.
+`STRATA_PF_FUSED=1`: 1,438 -> 2,057 tok/s on a 32K prompt (+45%; rounds differently, opt-in); `STRATA_PF_GEMM=1`,
+16K chunks, `STRATA_PREFILL_HELP=1`: within 2%. The largest decode lever by the roofline is tokens per window (an
+extra row costs ~1.2 of 10.6 ms), i.e. a better drafter; then fewer kernels per window.
