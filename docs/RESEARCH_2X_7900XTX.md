@@ -231,3 +231,13 @@ slots equal to solo as before. Pipelined and serial windows write different text
   Each folder's `iterations.tsv` lists every try in order with its numbers and the decision.
 - Raw engine and server logs stayed on the PC (`data/logs/` is ignored by git); `data/results.jsonl` holds every
   measured run.
+
+## 10. Long context up to 128K (09 Oct; bench/results/2026-10-09-long-context-7900xtx)
+
+The production build through the server, to the configured 128K: a code word found at 10 / 50 / 90% of 8K, 32K, 64K
+and 127K prompts (12 of 12); two of three facts spread through 34K / 63K / 119K combined right (3 of 3, thinking on);
+~3,000-token reports after 32K / 67K / 122K of prompt coherent to the end at 101 / 95 / 92 tok/s; 9K-16K generated
+tokens (a story and a program, greedy and sampled) coherent; a conversation grown to 96K over four parts recalled all
+four codenames, each turn reading only its new part. No engine error, no GTT spill. Prompt reading 1,100-1,200 tok/s,
+the first token after 108 s at 121K; beyond 32K the attention cache streams from RAM and 92-96% of its reads still hit
+VRAM.

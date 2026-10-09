@@ -49,6 +49,11 @@ The engine is `engine/strata`, built from `main` (below). Measured on 08 Oct wit
 | several at once, `"parallel": 8`, total at 1 / 2 / 4 / 8 requests | 71.1 / 89.3 / 133.5 / 179.6 |
 | prompt reading, 4.7K tokens | ~1,100 |
 
+Long context (09 Oct, [bench/results/2026-10-09-long-context-7900xtx](bench/results/2026-10-09-long-context-7900xtx/README.md)):
+recall at 8K-127K 12 of 12, reasoning over facts spread through 34K-119K 3 of 3, ~3K-token answers after 122K of
+prompt coherent at 92 tok/s, 9K-16K generated tokens coherent, a 96K-token conversation recalled - no garbage or
+drift up to the 128K limit; prompt reading ~1,100-1,200 tok/s, first token after 108 s at 121K.
+
 ## History
 
 | date | what | result |
@@ -63,6 +68,7 @@ The engine is `engine/strata`, built from `main` (below). Measured on 08 Oct wit
 | 07 Oct | a second branch for the drafter's second choice, built to a lossless rescue (branch `bonus-branch`) | no gain on this PC |
 | 08 Oct | rebased onto upstream's `main` (393 new commits); duplicates of upstream's own work dropped | same text, same speed |
 | 08 Oct | the drafter's stream priority on ROCm (found while preparing `pr/two-gpu-split`) | no more slow engine starts |
+| 09 Oct | long-context quality and speed up to 128K | no garbage or drift; recall and reasoning all right |
 
 ## Bringing in upstream's changes
 

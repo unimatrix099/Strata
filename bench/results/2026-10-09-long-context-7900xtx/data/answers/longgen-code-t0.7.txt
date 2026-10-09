@@ -1,0 +1,1542 @@
+# Library Management System
+
+Below is a complete, well-commented Python library management system split into logical files.
+
+## File 1: `models.py` — Data Model
+
+```python
+"""
+models.py
+---------
+Defines the core data classes for the library management system.
+
+Classes:
+    Book          – represents a single book in the catalogue
+    Member        – represents a library member (patron)
+    Loan          – represents a loan (checkout) of a book to a member
+
+Each class uses __repr__ for readable debugging output and __eq__ where
+useful.  Dataclasses are used to minimise boilerplate.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import datetime
+from typing import Optional
+
+
+@dataclasses.dataclass(frozen=True)
+class Book:
+    """
+    A single book in the library catalogue.
+
+    Attributes
+    ----------
+    isbn      : str   – International Standard Book Number (10 or 13 digits)
+    title     : str   – Full title of the book
+    author    : str   – Primary author name
+    year      : int   – Publication year
+    available : bool  – True when the book is on the shelf and can be borrowed
+    """
+    isbn: str
+    title: str
+    author: str
+    year: int
+    available: bool = True
+
+    def __post_init__(self) -> None:
+        """Validate the book data at construction time."""
+        # ISBN must be 10 or 13 digits (allow dashes for readability)
+        clean_isbn = self.isbn.replace("-", "")
+        if not clean_isbn.isdigit():
+            raise ValueError(f"ISBN must contain only digits: {self.isbn!r}")
+        if len(clean_isbn) not in (10, 13):
+            raise ValueError(
+                f"ISBN must be 10 or 13 digits (got {len(clean_isbn)}): {self.isbn!r}"
+            )
+
+        # Title and author must be non-empty strings
+        if not self.title or not self.title.strip():
+            raise ValueError("Title must be a non-empty string")
+        if not self.author or not self.author.strip():
+            raise ValueError("Author must be a non-empty string")
+
+        # Year must be a reasonable publication year
+        if self.year < 1000 or self.year > datetime.date.today().year:
+            raise ValueError(
+                f"Year must be between 1000 and {datetime.date.today().year}: {self.year}"
+            )
+
+    def __repr__(self) -> str:
+        status = "Available" if self.available else "Checked out"
+        return (
+            f"Book(isbn={self.isbn!r}, title={self.title!r}, "
+            f"author={self.author!r}, year={self.year}, status={status})"
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class Member:
+    """
+    A library member (patron).
+
+    Attributes
+    ----------
+    member_id : int  – Unique numeric identifier
+    name      : str  – Full name of the member
+    email     : str  – Email address
+    """
+    member_id: int
+    name: str
+    email: str
+
+    def __post_init__(self) -> None:
+        """Validate member data at construction time."""
+        if self.member_id <= 0:
+            raise ValueError(f"Member ID must be positive: {self.member_id}")
+        if not self.name or not self.name.strip():
+            raise ValueError("Member name must be a non-empty string")
+        # Very simple email validation – just check for '@'
+        if "@" not in self.email:
+            raise ValueError(f"Invalid email address: {self.email!r}")
+
+    def __repr__(self) -> str:
+        return (
+            f"Member(member_id={self.member_id}, name={self.name!r}, "
+            f"email={self.email!r})"
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class Loan:
+    """
+    A loan record: a book checked out by a member on a given date.
+
+    Attributes
+    ----------
+    loan_id       : int            – Unique numeric identifier
+    book_isbn     : str            – ISBN of the borrowed book
+    member_id     : int            – ID of the borrowing member
+    due_date      : datetime.date  – Date by which the book must be returned
+    returned_date : Optional[datetime.date] – Date the book was actually returned (None if still out)
+    """
+    loan_id: int
+    book_isbn: str
+    member_id: int
+    due_date: datetime.date
+    returned_date: Optional[datetime.date] = None
+
+    def __post_init__(self) -> None:
+        """Validate loan data at construction time."""
+        if self.loan_id <= 0:
+            raise ValueError(f"Loan ID must be positive: {self.loan_id}")
+        if self.member_id <= 0:
+            raise ValueError(f"Member ID must be positive: {self.member_id}")
+        # ISBN basic check
+        clean_isbn = self.book_isbn.replace("-", "")
+        if not clean_isbn.isdigit():
+            raise ValueError(f"Book ISBN must contain only digits: {self.book_isbn!r}")
+        if self.due_date < datetime.date(1900, 1, 1):
+            raise ValueError(f"Due date is too early: {self.due_date}")
+        if self.returned_date is not None and self.returned_date < self.due_date:
+            # Returning before the due date is fine, but we flag illogical dates
+            pass  # early return is acceptable
+
+    def is_active(self) -> bool:
+        """Return True if the loan is still open (book not yet returned)."""
+        return self.returned_date is None
+
+    def is_overdue(self, as_of: Optional[datetime.date] = None) -> bool:
+        """Return True if the loan is still open and past its due date."""
+        if not self.is_active():
+            return False
+        today = as_of or datetime.date.today()
+        return today > self.due_date
+
+    def __repr__(self) -> str:
+        status = "Returned" if not self.is_active() else "Active"
+        overdue_tag = " [OVERDUE]" if self.is_overdue() else ""
+        return (
+            f"Loan(loan_id={self.loan_id}, isbn={self.book_isbn!r}, "
+            f"member_id={self.member_id}, due={self.due_date}, "
+            f"status={status}{overdue_tag})"
+        )
+```
+
+## File 2: `store.py` — SQLite Storage Layer
+
+```python
+"""
+store.py
+--------
+SQLite-backed persistence layer for the library management system.
+
+The LibraryStore class owns a single SQLite connection (in-memory by default)
+and exposes high-level methods that return fully-populated model objects
+(Book, Member, Loan).  All queries use parameterised statements to prevent
+SQL injection.
+
+Schema tables
+-------------
+books   : isbn TEXT PRIMARY KEY, title TEXT, author TEXT, year INTEGER, available INTEGER (0/1)
+members : member_id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT
+loans   : loan_id INTEGER PRIMARY KEY AUTOINCREMENT, book_isbn TEXT, member_id INTEGER,
+          due_date TEXT (ISO), returned_date TEXT (ISO or NULL)
+"""
+
+from __future__ import annotations
+
+import datetime
+import sqlite3
+from typing import List, Optional
+
+from models import Book, Member, Loan
+
+
+class LibraryStore:
+    """
+    Thin wrapper around a SQLite database for the library catalogue.
+
+    Parameters
+    ----------
+    db_path : str | None
+        Path to the SQLite file.  Use ``":memory:"`` (default) for a
+        throw-away database (ideal for tests).  Use a real path for
+        persistence.
+    """
+
+    # ── Schema DDL ──────────────────────────────────────────────
+    _SCHEMA = """
+    CREATE TABLE IF NOT EXISTS books (
+        isbn      TEXT    PRIMARY KEY,
+        title     TEXT    NOT NULL,
+        author    TEXT    NOT NULL,
+        year      INTEGER NOT NULL,
+        available INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS members (
+        member_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name      TEXT    NOT NULL,
+        email     TEXT    NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS loans (
+        loan_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        book_isbn     TEXT    NOT NULL,
+        member_id     INTEGER NOT NULL,
+        due_date      TEXT    NOT NULL,
+        returned_date TEXT    NULL,
+        FOREIGN KEY (book_isbn) REFERENCES books(isbn),
+        FOREIGN KEY (member_id) REFERENCES members(member_id)
+    );
+    """
+
+    def __init__(self, db_path: str = ":memory:") -> None:
+        self._conn = sqlite3.connect(db_path)
+        # Return rows as tuple-like objects so we can access by column name
+        self._conn.row_factory = sqlite3.Row
+        # Enforce foreign-key constraints
+        self._conn.execute("PRAGMA foreign_keys = ON;")
+        # Create tables if they don't already exist
+        self._conn.executescript(self._SCHEMA)
+        self._conn.commit()
+
+    # ── Lifecycle ───────────────────────────────────────────────
+    def close(self) -> None:
+        """Close the underlying SQLite connection."""
+        self._conn.close()
+
+    # ── Books ───────────────────────────────────────────────────
+    def add_book(self, book: Book) -> Book:
+        """
+        Insert a new book into the catalogue.
+
+        Raises
+        ------
+        sqlite3.IntegrityError
+            If a book with the same ISBN already exists.
+        """
+        self._conn.execute(
+            "INSERT INTO books (isbn, title, author, year, available) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (book.isbn, book.title, book.author, book.year, int(book.available)),
+        )
+        self._conn.commit()
+        return book
+
+    def get_book(self, isbn: str) -> Optional[Book]:
+        """Fetch a single book by ISBN.  Returns None if not found."""
+        row = self._conn.execute(
+            "SELECT * FROM books WHERE isbn = ?", (isbn,)
+        ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_book(row)
+
+    def list_books(self) -> List[Book]:
+        """Return every book in the catalogue, ordered by title."""
+        rows = self._conn.execute(
+            "SELECT * FROM books ORDER BY title"
+        ).fetchall()
+        return [self._row_to_book(r) for r in rows]
+
+    def search_books(self, query: str) -> List[Book]:
+        """
+        Case-insensitive partial search on title and author.
+
+        Parameters
+        ----------
+        query : str
+            Substring to look for (matches title OR author).
+        """
+        pattern = f"%{query}%"
+        rows = self._conn.execute(
+            "SELECT * FROM books WHERE title LIKE ? OR author LIKE ? ORDER BY title",
+            (pattern, pattern),
+        ).fetchall()
+        return [self._row_to_book(r) for r in rows]
+
+    def remove_book(self, isbn: str) -> bool:
+        """
+        Delete a book by ISBN.  Returns True if a row was deleted,
+        False if the ISBN was not found.
+
+        Raises
+        ------
+        sqlite3.IntegrityError
+            If the book is currently on loan (foreign-key constraint).
+        """
+        cursor = self._conn.execute(
+            "DELETE FROM books WHERE isbn = ?", (isbn,)
+        )
+        self._conn.commit()
+        return cursor.rowcount > 0
+
+    # ── Members ─────────────────────────────────────────────────
+    def add_member(self, name: str, email: str) -> Member:
+        """
+        Insert a new member and return the Member with its assigned ID.
+        """
+        cursor = self._conn.execute(
+            "INSERT INTO members (name, email) VALUES (?, ?)",
+            (name, email),
+        )
+        self._conn.commit()
+        return Member(member_id=cursor.lastrowid, name=name, email=email)
+
+    def get_member(self, member_id: int) -> Optional[Member]:
+        """Fetch a single member by ID.  Returns None if not found."""
+        row = self._conn.execute(
+            "SELECT * FROM members WHERE member_id = ?", (member_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_member(row)
+
+    def list_members(self) -> List[Member]:
+        """Return every member, ordered by name."""
+        rows = self._conn.execute(
+            "SELECT * FROM members ORDER BY name"
+        ).fetchall()
+        return [self._row_to_member(r) for r in rows]
+
+    def remove_member(self, member_id: int) -> bool:
+        """
+        Delete a member by ID.  Returns True if deleted, False otherwise.
+
+        Raises
+        ------
+        sqlite3.IntegrityError
+            If the member has outstanding loans.
+        """
+        cursor = self._conn.execute(
+            "DELETE FROM members WHERE member_id = ?", (member_id,)
+        )
+        self._conn.commit()
+        return cursor.rowcount > 0
+
+    # ── Loans ───────────────────────────────────────────────────
+    def create_loan(self, book_isbn: str, member_id: int, due_date: datetime.date) -> Loan:
+        """
+        Check out a book to a member.
+
+        Steps
+        -----
+        1. Verify the book exists and is available.
+        2. Verify the member exists.
+        3. Mark the book as unavailable.
+        4. Insert the loan record.
+
+        Raises
+        ------
+        ValueError  – book not found or already checked out, member not found.
+        """
+        book = self.get_book(book_isbn)
+        if book is None:
+            raise ValueError(f"Book with ISBN {book_isbn!r} not found")
+        if not book.available:
+            raise ValueError(f"Book {book.title!r} is already checked out")
+
+        member = self.get_member(member_id)
+        if member is None:
+            raise ValueError(f"Member with ID {member_id} not found")
+
+        # Mark book as unavailable
+        self._conn.execute(
+            "UPDATE books SET available = 0 WHERE isbn = ?", (book_isbn,)
+        )
+
+        # Insert loan
+        cursor = self._conn.execute(
+            "INSERT INTO loans (book_isbn, member_id, due_date) VALUES (?, ?, ?)",
+            (book_isbn, member_id, due_date.isoformat()),
+        )
+        self._conn.commit()
+
+        return Loan(
+            loan_id=cursor.lastrowid,
+            book_isbn=book_isbn,
+            member_id=member_id,
+            due_date=due_date,
+            returned_date=None,
+        )
+
+    def return_loan(self, loan_id: int, return_date: Optional[datetime.date] = None) -> Loan:
+        """
+        Record the return of a loan.
+
+        Parameters
+        ----------
+        loan_id     : int
+        return_date : datetime.date | None – defaults to today
+
+        Raises
+        ------
+        ValueError – loan not found or already returned.
+        """
+        row = self._conn.execute(
+            "SELECT * FROM loans WHERE loan_id = ?", (loan_id,)
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Loan with ID {loan_id} not found")
+        if row["returned_date"] is not None:
+            raise ValueError(f"Loan {loan_id} has already been returned")
+
+        actual_date = return_date or datetime.date.today()
+
+        # Mark book as available again
+        self._conn.execute(
+            "UPDATE books SET available = 1 WHERE isbn = ?", (row["book_isbn"],)
+        )
+
+        # Record the return date
+        self._conn.execute(
+            "UPDATE loans SET returned_date = ? WHERE loan_id = ?",
+            (actual_date.isoformat(), loan_id),
+        )
+        self._conn.commit()
+
+        return Loan(
+            loan_id=loan_id,
+            book_isbn=row["book_isbn"],
+            member_id=row["member_id"],
+            due_date=datetime.date.fromisoformat(row["due_date"]),
+            returned_date=actual_date,
+        )
+
+    def get_loan(self, loan_id: int) -> Optional[Loan]:
+        """Fetch a single loan by ID.  Returns None if not found."""
+        row = self._conn.execute(
+            "SELECT * FROM loans WHERE loan_id = ?", (loan_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_loan(row)
+
+    def list_loans(self) -> List[Loan]:
+        """Return every loan record, ordered by loan_id."""
+        rows = self._conn.execute(
+            "SELECT * FROM loans ORDER BY loan_id"
+        ).fetchall()
+        return [self._row_to_loan(r) for r in rows]
+
+    def list_active_loans(self) -> List[Loan]:
+        """Return every loan that has not yet been returned."""
+        rows = self._conn.execute(
+            "SELECT * FROM loans WHERE returned_date IS NULL ORDER BY due_date"
+        ).fetchall()
+        return [self._row_to_loan(r) for r in rows]
+
+    def list_overdue_loans(self, as_of: Optional[datetime.date] = None) -> List[Loan]:
+        """Return every active loan whose due date has passed."""
+        reference = as_of or datetime.date.today()
+        rows = self._conn.execute(
+            "SELECT * FROM loans WHERE returned_date IS NULL AND due_date < ? ORDER BY due_date",
+            (reference.isoformat(),),
+        ).fetchall()
+        return [self._row_to_loan(r) for r in rows]
+
+    # ── Private helpers ─────────────────────────────────────────
+    @staticmethod
+    def _row_to_book(row: sqlite3.Row) -> Book:
+        return Book(
+            isbn=row["isbn"],
+            title=row["title"],
+            author=row["author"],
+            year=row["year"],
+            available=bool(row["available"]),
+        )
+
+    @staticmethod
+    def _row_to_member(row: sqlite3.Row) -> Member:
+        return Member(
+            member_id=row["member_id"],
+            name=row["name"],
+            email=row["email"],
+        )
+
+    @staticmethod
+    def _row_to_loan(row: sqlite3.Row) -> Loan:
+        due = datetime.date.fromisoformat(row["due_date"])
+        ret = None
+        if row["returned_date"] is not None:
+            ret = datetime.date.fromisoformat(row["returned_date"])
+        return Loan(
+            loan_id=row["loan_id"],
+            book_isbn=row["book_isbn"],
+            member_id=row["member_id"],
+            due_date=due,
+            returned_date=ret,
+        )
+```
+
+## File 3: `cli.py` — Command-Line Interface
+
+```python
+"""
+cli.py
+------
+Interactive command-line interface for the library management system.
+
+Commands
+--------
+add-book        Add a new book to the catalogue.
+list-books      Show all books.
+search-books    Search books by title or author.
+remove-book     Delete a book by ISBN.
+add-member      Register a new member.
+list-members    Show all members.
+remove-member   Delete a member by ID.
+checkout        Borrow a book (create a loan).
+return-book     Return a checked-out book.
+list-loans      Show all loans.
+list-active     Show outstanding (unreturned) loans.
+list-overdue    Show overdue loans.
+help            Show available commands.
+quit            Exit the application.
+
+Input validation is handled by parsing helpers that raise ValueError with
+human-friendly messages; the main loop catches those and re-prompts.
+"""
+
+from __future__ import annotations
+
+import datetime
+import sys
+from typing import Optional
+
+from models import Book
+from store import LibraryStore
+
+
+# ── Prompt helpers with validation ──────────────────────────────
+
+def _prompt_str(label: str) -> str:
+    """Prompt for a non-empty string."""
+    while True:
+        value = input(f"  {label}: ").strip()
+        if value:
+            return value
+        print("  (value cannot be empty)")
+
+
+def _prompt_int(label: str) -> int:
+    """Prompt for a positive integer."""
+    while True:
+        raw = input(f"  {label}: ").strip()
+        try:
+            value = int(raw)
+            if value <= 0:
+                raise ValueError
+            return value
+        except ValueError:
+            print("  (please enter a positive integer)")
+
+
+def _prompt_year(label: str) -> int:
+    """Prompt for a valid publication year."""
+    current_year = datetime.date.today().year
+    while True:
+        raw = input(f"  {label}: ").strip()
+        try:
+            value = int(raw)
+            if value < 1000 or value > current_year:
+                raise ValueError
+            return value
+        except ValueError:
+            print(f"  (year must be between 1000 and {current_year})")
+
+
+def _prompt_date(label: str) -> datetime.date:
+    """Prompt for a date in YYYY-MM-DD format."""
+    while True:
+        raw = input(f"  {label} (YYYY-MM-DD): ").strip()
+        try:
+            return datetime.date.fromisoformat(raw)
+        except ValueError:
+            print("  (invalid date – use YYYY-MM-DD)")
+
+
+def _prompt_isbn(label: str) -> str:
+    """Prompt for a valid ISBN (10 or 13 digits, dashes optional)."""
+    while True:
+        raw = input(f"  {label}: ").strip()
+        clean = raw.replace("-", "")
+        if clean.isdigit() and len(clean) in (10, 13):
+            return raw  # keep original formatting for storage
+        print("  (ISBN must be 10 or 13 digits)")
+
+
+def _prompt_email(label: str) -> str:
+    """Prompt for a basic email address."""
+    while True:
+        raw = input(f"  {label}: ").strip()
+        if "@" in raw and "." in raw:
+            return raw
+        print("  (enter a valid email, e.g. name@example.com)")
+
+
+# ── Command handlers ────────────────────────────────────────────
+
+def cmd_add_book(store: LibraryStore) -> None:
+    """Add a new book to the catalogue."""
+    print("\n--- Add Book ---")
+    isbn = _prompt_isbn("ISBN")
+    title = _prompt_str("Title")
+    author = _prompt_str("Author")
+    year = _prompt_year("Year")
+
+    try:
+        book = Book(isbn=isbn, title=title, author=author, year=year)
+        store.add_book(book)
+        print(f"  ✓ Added: {book}")
+    except Exception as exc:
+        print(f"  ✗ Error: {exc}")
+
+
+def cmd_list_books(store: LibraryStore) -> None:
+    """Display every book in the catalogue."""
+    books = store.list_books()
+    if not books:
+        print("\n  (catalogue is empty)")
+        return
+    print(f"\n  {'ISBN':<15} {'Title':<40} {'Author':<25} {'Year':>5}  {'Status'}")
+    print("  " + "-" * 95)
+    for b in books:
+        status = "Available" if b.available else "Checked out"
+        print(f"  {b.isbn:<15} {b.title:<40} {b.author:<25} {b.year:>5}  {status}")
+    print(f"  Total: {len(books)} book(s)")
+
+
+def cmd_search_books(store: LibraryStore) -> None:
+    """Search the catalogue by title or author."""
+    print("\n--- Search Books ---")
+    query = _prompt_str("Search term")
+    results = store.search_books(query)
+    if not results:
+        print(f"  No books found matching {query!r}")
+        return
+    print(f"\n  Found {len(results)} result(s):")
+    for b in results:
+        status = "Available" if b.available else "Checked out"
+        print(f"    {b.isbn}  {b.title}  by {b.author}  ({b.year})  [{status}]")
+
+
+def cmd_remove_book(store: LibraryStore) -> None:
+    """Delete a book by ISBN."""
+    print("\n--- Remove Book ---")
+    isbn = _prompt_isbn("ISBN")
+    book = store.get_book(isbn)
+    if book is None:
+        print(f"  ✗ Book not found: {isbn}")
+        return
+    confirm = input(f"  Confirm delete {book.title!r}? (y/n): ").strip().lower()
+    if confirm != "y":
+        print("  Cancelled.")
+        return
+    try:
+        store.remove_book(isbn)
+        print(f"  ✓ Removed: {book.title}")
+    except Exception as exc:
+        print(f"  ✗ Error: {exc}")
+
+
+def cmd_add_member(store: LibraryStore) -> None:
+    """Register a new member."""
+    print("\n--- Add Member ---")
+    name = _prompt_str("Name")
+    email = _prompt_email("Email")
+    try:
+        member = store.add_member(name=name, email=email)
+        print(f"  ✓ Registered: {member}")
+    except Exception as exc:
+        print(f"  ✗ Error: {exc}")
+
+
+def cmd_list_members(store: LibraryStore) -> None:
+    """Display every member."""
+    members = store.list_members()
+    if not members:
+        print("\n  (no members registered)")
+        return
+    print(f"\n  {'ID':>4}  {'Name':<30}  {'Email'}")
+    print("  " + "-" * 70)
+    for m in members:
+        print(f"  {m.member_id:>4}  {m.name:<30}  {m.email}")
+    print(f"  Total: {len(members)} member(s)")
+
+
+def cmd_remove_member(store: LibraryStore) -> None:
+    """Delete a member by ID."""
+    print("\n--- Remove Member ---")
+    member_id = _prompt_int("Member ID")
+    member = store.get_member(member_id)
+    if member is None:
+        print(f"  ✗ Member not found: {member_id}")
+        return
+    confirm = input(f"  Confirm delete {member.name!r}? (y/n): ").strip().lower()
+    if confirm != "y":
+        print("  Cancelled.")
+        return
+    try:
+        store.remove_member(member_id)
+        print(f"  ✓ Removed: {member.name}")
+    except Exception as exc:
+        print(f"  ✗ Error: {exc}")
+
+
+def cmd_checkout(store: LibraryStore) -> None:
+    """Check out a book to a member."""
+    print("\n--- Checkout ---")
+    isbn = _prompt_isbn("Book ISBN")
+    member_id = _prompt_int("Member ID")
+    due = _prompt_date("Due date")
+
+    try:
+        loan = store.create_loan(book_isbn=isbn, member_id=member_id, due_date=due)
+        print(f"  ✓ Checked out: {loan}")
+    except Exception as exc:
+        print(f"  ✗ Error: {exc}")
+
+
+def cmd_return_book(store: LibraryStore) -> None:
+    """Return a checked-out book by loan ID."""
+    print("\n--- Return Book ---")
+    loan_id = _prompt_int("Loan ID")
+    try:
+        loan = store.return_loan(loan_id)
+        print(f"  ✓ Returned: {loan}")
+    except Exception as exc:
+        print(f"  ✗ Error: {exc}")
+
+
+def cmd_list_loans(store: LibraryStore) -> None:
+    """Display all loans."""
+    loans = store.list_loans()
+    if not loans:
+        print("\n  (no loans recorded)")
+        return
+    print(f"\n  {'Loan ID':>7}  {'ISBN':<15}  {'Member':>6}  {'Due Date':<12}  {'Status'}")
+    print("  " + "-" * 75)
+    for loan in loans:
+        status = "Active" if loan.is_active() else "Returned"
+        overdue = " [OVERDUE]" if loan.is_overdue() else ""
+        print(
+            f"  {loan.loan_id:>7}  {loan.book_isbn:<15}  "
+            f"{loan.member_id:>6}  {loan.due_date.isoformat():<12}  {status}{overdue}"
+        )
+    print(f"  Total: {len(loans)} loan(s)")
+
+
+def cmd_list_active(store: LibraryStore) -> None:
+    """Display outstanding loans."""
+    loans = store.list_active_loans()
+    if not loans:
+        print("\n  (no outstanding loans)")
+        return
+    print(f"\n  {'Loan ID':>7}  {'ISBN':<15}  {'Member':>6}  {'Due Date':<12}")
+    print("  " + "-" * 50)
+    for loan in loans:
+        overdue = " [OVERDUE]" if loan.is_overdue() else ""
+        print(
+            f"  {loan.loan_id:>7}  {loan.book_isbn:<15}  "
+            f"{loan.member_id:>6}  {loan.due_date.isoformat():<12}{overdue}"
+        )
+    print(f"  Outstanding: {len(loans)} loan(s)")
+
+
+def cmd_list_overdue(store: LibraryStore) -> None:
+    """Display overdue loans."""
+    loans = store.list_overdue_loans()
+    if not loans:
+        print("\n  (no overdue loans)")
+        return
+    print(f"\n  {'Loan ID':>7}  {'ISBN':<15}  {'Member':>6}  {'Due Date':<12}")
+    print("  " + "-" * 50)
+    for loan in loans:
+        print(
+            f"  {loan.loan_id:>7}  {loan.book_isbn:<15}  "
+            f"{loan.member_id:>6}  {loan.due_date.isoformat():<12}"
+        )
+    print(f"  Overdue: {len(loans)} loan(s)")
+
+
+# ── Command dispatch table ──────────────────────────────────────
+
+_COMMANDS = {
+    "add-book":      cmd_add_book,
+    "list-books":    cmd_list_books,
+    "search-books":  cmd_search_books,
+    "remove-book":   cmd_remove_book,
+    "add-member":    cmd_add_member,
+    "list-members":  cmd_list_members,
+    "remove-member": cmd_remove_member,
+    "checkout":      cmd_checkout,
+    "return-book":   cmd_return_book,
+    "list-loans":    cmd_list_loans,
+    "list-active":   cmd_list_active,
+    "list-overdue":  cmd_list_overdue,
+}
+
+_HELP_TEXT = """
+Available commands:
+  add-book        Add a new book to the catalogue.
+  list-books      Show all books.
+  search-books    Search books by title or author.
+  remove-book     Delete a book by ISBN.
+  add-member      Register a new member.
+  list-members    Show all members.
+  remove-member   Delete a member by ID.
+  checkout        Borrow a book (create a loan).
+  return-book     Return a checked-out book.
+  list-loans      Show all loans.
+  list-active     Show outstanding (unreturned) loans.
+  list-overdue    Show overdue loans.
+  help            Show this help message.
+  quit            Exit the application.
+"""
+
+
+def main(db_path: str = ":memory:") -> None:
+    """
+    Main entry point for the interactive CLI.
+
+    Parameters
+    ----------
+    db_path : str – path to the SQLite database file (default: in-memory).
+    """
+    store = LibraryStore(db_path)
+    print("=" * 60)
+    print("  Library Management System")
+    print("  Type 'help' for a list of commands, 'quit' to exit.")
+    print("=" * 60)
+
+    try:
+        while True:
+            try:
+                raw = input("\n> ").strip().lower()
+            except EOFError:
+                print("\n  (end of input)")
+                break
+
+            if raw in ("quit", "exit", "q"):
+                print("  Goodbye!")
+                break
+            elif raw == "help":
+                print(_HELP_TEXT)
+            elif raw in _COMMANDS:
+                _COMMANDS[raw](store)
+            elif raw:
+                print(f"  Unknown command: {raw!r}. Type 'help' for a list.")
+            # empty input just re-prompts
+    finally:
+        store.close()
+
+
+if __name__ == "__main__":
+    main()
+```
+
+## File 4: `test_models.py` — Unit Tests for Models
+
+```python
+"""
+test_models.py
+--------------
+Unit tests for the data-model classes in models.py.
+
+Run with:  python -m pytest test_models.py -v
+"""
+
+import datetime
+import unittest
+
+from models import Book, Member, Loan
+
+
+class TestBook(unittest.TestCase):
+    """Tests for the Book dataclass."""
+
+    def test_valid_book(self) -> None:
+        """A well-formed Book should construct without error."""
+        book = Book(
+            isbn="978-0-13-468599-1",
+            title="The Pragmatic Programmer",
+            author="Hunt & Thomas",
+            year=2019,
+            available=True,
+        )
+        self.assertEqual(book.isbn, "978-0-13-468599-1")
+        self.assertEqual(book.title, "The Pragmatic Programmer")
+        self.assertEqual(book.author, "Hunt & Thomas")
+        self.assertEqual(book.year, 2019)
+        self.assertTrue(book.available)
+
+    def test_isbn_validation_rejects_non_digits(self) -> None:
+        """ISBN containing letters should raise ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            Book(isbn="not-an-isbn", title="T", author="A", year=2020)
+        self.assertIn("ISBN", str(ctx.exception))
+
+    def test_isbn_validation_rejects_wrong_length(self) -> None:
+        """ISBN with 9 digits should raise ValueError."""
+        with self.assertRaises(ValueError) as ctx:
+            Book(isbn="123456789", title="T", author="A", year=2020)
+        self.assertIn("10 or 13", str(ctx.exception))
+
+    def test_isbn_with_dashes_is_accepted(self) -> None:
+        """Dashes in the ISBN are stripped before validation."""
+        book = Book(
+            isbn="978-0-13-468599-1",
+            title="T",
+            author="A",
+            year=2020,
+        )
+        self.assertEqual(book.isbn, "978-0-13-468599-1")
+
+    def test_empty_title_rejected(self) -> None:
+        """An empty or whitespace-only title should raise ValueError."""
+        with self.assertRaises(ValueError):
+            Book(isbn="1234567890", title="", author="A", year=2020)
+        with self.assertRaises(ValueError):
+            Book(isbn="1234567890", title="   ", author="A", year=2020)
+
+    def test_empty_author_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            Book(isbn="1234567890", title="T", author="", year=2020)
+
+    def test_year_too_low_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            Book(isbn="1234567890", title="T", author="A", year=999)
+
+    def test_year_in_future_rejected(self) -> None:
+        future_year = datetime.date.today().year + 1
+        with self.assertRaises(ValueError):
+            Book(isbn="1234567890", title="T", author="A", year=future_year)
+
+    def test_repr(self) -> None:
+        book = Book(isbn="1234567890", title="Test", author="Author", year=2020)
+        r = repr(book)
+        self.assertIn("Test", r)
+        self.assertIn("Available", r)
+
+    def test_frozen(self) -> None:
+        """Book instances should be immutable (frozen dataclass)."""
+        book = Book(isbn="1234567890", title="Test", author="Author", year=2020)
+        with self.assertRaises(Exception):
+            book.title = "Changed"  # type: ignore
+
+
+class TestMember(unittest.TestCase):
+    """Tests for the Member dataclass."""
+
+    def test_valid_member(self) -> None:
+        member = Member(member_id=1, name="Alice", email="alice@example.com")
+        self.assertEqual(member.member_id, 1)
+        self.assertEqual(member.name, "Alice")
+
+    def test_negative_id_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            Member(member_id=0, name="X", email="x@x.com")
+        with self.assertRaises(ValueError):
+            Member(member_id=-1, name="X", email="x@x.com")
+
+    def test_empty_name_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            Member(member_id=1, name="", email="x@x.com")
+
+    def test_invalid_email_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            Member(member_id=1, name="X", email="not-an-email")
+
+    def test_repr(self) -> None:
+        member = Member(member_id=42, name="Bob", email="bob@example.com")
+        r = repr(member)
+        self.assertIn("Bob", r)
+        self.assertIn("42", r)
+
+
+class TestLoan(unittest.TestCase):
+    """Tests for the Loan dataclass."""
+
+    def test_valid_loan(self) -> None:
+        loan = Loan(
+            loan_id=1,
+            book_isbn="1234567890",
+            member_id=1,
+            due_date=datetime.date(2025, 7, 1),
+            returned_date=None,
+        )
+        self.assertTrue(loan.is_active())
+        self.assertFalse(loan.is_overdue(as_of=datetime.date(2025, 6, 1)))
+        self.assertTrue(loan.is_overdue(as_of=datetime.date(2025, 7, 2)))
+
+    def test_returned_loan_is_not_active(self) -> None:
+        loan = Loan(
+            loan_id=2,
+            book_isbn="1234567890",
+            member_id=1,
+            due_date=datetime.date(2025, 7, 1),
+            returned_date=datetime.date(2025, 6, 20),
+        )
+        self.assertFalse(loan.is_active())
+        self.assertFalse(loan.is_overdue())
+
+    def test_negative_loan_id_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            Loan(
+                loan_id=0,
+                book_isbn="1234567890",
+                member_id=1,
+                due_date=datetime.date(2025, 7, 1),
+            )
+
+    def test_invalid_isbn_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            Loan(
+                loan_id=1,
+                book_isbn="bad-isbn",
+                member_id=1,
+                due_date=datetime.date(2025, 7, 1),
+            )
+
+    def test_repr(self) -> None:
+        loan = Loan(
+            loan_id=5,
+            book_isbn="1234567890",
+            member_id=2,
+            due_date=datetime.date(2025, 7, 1),
+            returned_date=None,
+        )
+        r = repr(loan)
+        self.assertIn("Active", r)
+
+    def test_repr_overdue(self) -> None:
+        loan = Loan(
+            loan_id=6,
+            book_isbn="1234567890",
+            member_id=2,
+            due_date=datetime.date(2024, 1, 1),  # far in the past
+            returned_date=None,
+        )
+        r = repr(loan)
+        self.assertIn("OVERDUE", r)
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+## File 5: `test_store.py` — Unit Tests for the Store
+
+```python
+"""
+test_store.py
+-------------
+Unit tests for the SQLite-backed LibraryStore.
+
+Each test gets a fresh in-memory database via setUp / tearDown so tests
+are completely isolated.
+
+Run with:  python -m pytest test_store.py -v
+"""
+
+import datetime
+import unittest
+
+from models import Book, Member, Loan
+from store import LibraryStore
+
+
+class LibraryStoreTestBase(unittest.TestCase):
+    """Shared fixture: every subclass gets its own fresh in-memory store."""
+
+    def setUp(self) -> None:
+        self.store = LibraryStore(":memory:")
+
+    def tearDown(self) -> None:
+        self.store.close()
+
+
+class TestBookCRUD(LibraryStoreTestBase):
+    """CRUD tests for books."""
+
+    def test_add_and_get_book(self) -> None:
+        book = Book(isbn="1111111111", title="Alpha", author="Author A", year=2020)
+        self.store.add_book(book)
+        fetched = self.store.get_book("1111111111")
+        self.assertIsNotNone(fetched)
+        assert fetched is not None
+        self.assertEqual(fetched.title, "Alpha")
+        self.assertEqual(fetched.author, "Author A")
+        self.assertTrue(fetched.available)
+
+    def test_get_missing_book_returns_none(self) -> None:
+        self.assertIsNone(self.store.get_book("0000000000"))
+
+    def test_list_books_empty(self) -> None:
+        self.assertEqual(self.store.list_books(), [])
+
+    def test_list_books_multiple(self) -> None:
+        self.store.add_book(Book(isbn="1111111111", title="Zebra", author="A", year=2020))
+        self.store.add_book(Book(isbn="2222222222", title="Apple", author="B", year=2021))
+        books = self.store.list_books()
+        self.assertEqual(len(books), 2)
+        # Should be ordered by title
+        self.assertEqual(books[0].title, "Apple")
+        self.assertEqual(books[1].title, "Zebra")
+
+    def test_search_books_by_title(self) -> None:
+        self.store.add_book(Book(isbn="1111111111", title="Python Cookbook", author="Beazley", year=2013))
+        self.store.add_book(Book(isbn="2222222222", title="Java Guide", author="Someone", year=2020))
+        results = self.store.search_books("python")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].title, "Python Cookbook")
+
+    def test_search_books_by_author(self) -> None:
+        self.store.add_book(Book(isbn="1111111111", title="X", author="Beazley", year=2013))
+        results = self.store.search_books("beazley")
+        self.assertEqual(len(results), 1)
+
+    def test_search_books_case_insensitive(self) -> None:
+        self.store.add_book(Book(isbn="1111111111", title="PYTHON", author="Beazley", year=2013))
+        results = self.store.search_books("python")
+        self.assertEqual(len(results), 1)
+
+    def test_search_books_no_match(self) -> None:
+        self.store.add_book(Book(isbn="1111111111", title="Python", author="A", year=2013))
+        results = self.store.search_books("ruby")
+        self.assertEqual(results, [])
+
+    def test_remove_book(self) -> None:
+        self.store.add_book(Book(isbn="1111111111", title="Gone", author="A", year=2020))
+        removed = self.store.remove_book("1111111111")
+        self.assertTrue(removed)
+        self.assertIsNone(self.store.get_book("1111111111"))
+
+    def test_remove_missing_book_returns_false(self) -> None:
+        removed = self.store.remove_book("0000000000")
+        self.assertFalse(removed)
+
+    def test_duplicate_isbn_raises(self) -> None:
+        import sqlite3
+        self.store.add_book(Book(isbn="1111111111", title="First", author="A", year=2020))
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.store.add_book(Book(isbn="1111111111", title="Second", author="B", year=2021))
+
+
+class TestMemberCRUD(LibraryStoreTestBase):
+    """CRUD tests for members."""
+
+    def test_add_and_get_member(self) -> None:
+        member = self.store.add_member("Alice", "alice@example.com")
+        self.assertIsInstance(member, Member)
+        self.assertEqual(member.name, "Alice")
+        self.assertGreater(member.member_id, 0)
+
+        fetched = self.store.get_member(member.member_id)
+        self.assertIsNotNone(fetched)
+        assert fetched is not None
+        self.assertEqual(fetched.email, "alice@example.com")
+
+    def test_get_missing_member_returns_none(self) -> None:
+        self.assertIsNone(self.store.get_member(9999))
+
+    def test_list_members_empty(self) -> None:
+        self.assertEqual(self.store.list_members(), [])
+
+    def test_list_members_multiple(self) -> None:
+        self.store.add_member("Zara", "z@e.com")
+        self.store.add_member("Adam", "a@e.com")
+        members = self.store.list_members()
+        self.assertEqual(len(members), 2)
+        # Ordered by name
+        self.assertEqual(members[0].name, "Adam")
+        self.assertEqual(members[1].name, "Zara")
+
+    def test_remove_member(self) -> None:
+        member = self.store.add_member("Temp", "t@e.com")
+        removed = self.store.remove_member(member.member_id)
+        self.assertTrue(removed)
+        self.assertIsNone(self.store.get_member(member.member_id))
+
+    def test_remove_missing_member_returns_false(self) -> None:
+        removed = self.store.remove_member(9999)
+        self.assertFalse(removed)
+
+
+class TestLoanCRUD(LibraryStoreTestBase):
+    """CRUD tests for loans (checkout / return)."""
+
+    def _seed(self) -> tuple[Book, Member]:
+        """Insert one book and one member, return them."""
+        book = Book(isbn="1111111111", title="Test Book", author="Author", year=2020)
+        self.store.add_book(book)
+        member = self.store.add_member("Reader", "r@e.com")
+        return book, member
+
+    def test_create_loan(self) -> None:
+        book, member = self._seed()
+        due = datetime.date(2025, 7, 1)
+        loan = self.store.create_loan(book.isbn, member.member_id, due)
+        self.assertIsInstance(loan, Loan)
+        self.assertTrue(loan.is_active())
+        # Book should now be unavailable
+        updated_book = self.store.get_book(book.isbn)
+        assert updated_book is not None
+        self.assertFalse(updated_book.available)
+
+    def test_checkout_unavailable_book_raises(self) -> None:
+        book, member = self._seed()
+        due = datetime.date(2025, 7, 1)
+        self.store.create_loan(book.isbn, member.member_id, due)
+        # Try to check out the same book again
+        with self.assertRaises(ValueError) as ctx:
+            self.store.create_loan(book.isbn, member.member_id, due)
+        self.assertIn("already checked out", str(ctx.exception))
+
+    def test_checkout_nonexistent_book_raises(self) -> None:
+        _, member = self._seed()
+        with self.assertRaises(ValueError) as ctx:
+            self.store.create_loan("0000000000", member.member_id, datetime.date(2025, 7, 1))
+        self.assertIn("not found", str(ctx.exception))
+
+    def test_checkout_nonexistent_member_raises(self) -> None:
+        book, _ = self._seed()
+        with self.assertRaises(ValueError) as ctx:
+            self.store.create_loan(book.isbn, 9999, datetime.date(2025, 7, 1))
+        self.assertIn("not found", str(ctx.exception))
+
+    def test_return_loan(self) -> None:
+        book, member = self._seed()
+        due = datetime.date(2025, 7, 1)
+        loan = self.store.create_loan(book.isbn, member.member_id, due)
+        returned = self.store.return_loan(loan.loan_id)
+        self.assertFalse(returned.is_active())
+        self.assertIsNotNone(returned.returned_date)
+        # Book should be available again
+        updated_book = self.store.get_book(book.isbn)
+        assert updated_book is not None
+        self.assertTrue(updated_book.available)
+
+    def test_return_already_returned_raises(self) -> None:
+        book, member = self._seed()
+        loan = self.store.create_loan(book.isbn, member.member_id, datetime.date(2025, 7, 1))
+        self.store.return_loan(loan.loan_id)
+        with self.assertRaises(ValueError) as ctx:
+            self.store.return_loan(loan.loan_id)
+        self.assertIn("already been returned", str(ctx.exception))
+
+    def test_return_nonexistent_loan_raises(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            self.store.return_loan(9999)
+        self.assertIn("not found", str(ctx.exception))
+
+    def test_list_loans(self) -> None:
+        book, member = self._seed()
+        loan1 = self.store.create_loan(book.isbn, member.member_id, datetime.date(2025, 7, 1))
+        self.store.return_loan(loan1.loan_id)
+        # Add a second book so we can have another loan
+        book2 = Book(isbn="2222222222", title="Book 2", author="B", year=2021)
+        self.store.add_book(book2)
+        member2 = self.store.add_member("Reader 2", "r2@e.com")
+        self.store.create_loan(book2.isbn, member2.member_id, datetime.date(2025, 8, 1))
+
+        loans = self.store.list_loans()
+        self.assertEqual(len(loans), 2)
+
+    def test_list_active_loans(self) -> None:
+        book, member = self._seed()
+        loan1 = self.store.create_loan(book.isbn, member.member_id, datetime.date(2025, 7, 1))
+        self.store.return_loan(loan1.loan_id)
+        # Second loan stays active
+        book2 = Book(isbn="2222222222", title="B2", author="B", year=2021)
+        self.store.add_book(book2)
+        self.store.create_loan(book2.isbn, member.member_id, datetime.date(2025, 8, 1))
+
+        active = self.store.list_active_loans()
+        self.assertEqual(len(active), 1)
+        self.assertTrue(active[0].is_active())
+
+    def test_list_overdue_loans(self) -> None:
+        book, member = self._seed()
+        # Create a loan due in the past
+        past_due = datetime.date(2024, 1, 1)
+        self.store.create_loan(book.isbn, member.member_id, past_due)
+        # Create a loan due in the future
+        book2 = Book(isbn="2222222222", title="B2", author="B", year=2021)
+        self.store.add_book(book2)
+        self.store.create_loan(book2.isbn, member.member_id, datetime.date(2099, 1, 1))
+
+        overdue = self.store.list_overdue_loans(as_of=datetime.date(2025, 1, 1))
+        self.assertEqual(len(overdue), 1)
+        self.assertEqual(overdue[0].book_isbn, book.isbn)
+
+    def test_get_loan(self) -> None:
+        book, member = self._seed()
+        loan = self.store.create_loan(book.isbn, member.member_id, datetime.date(2025, 7, 1))
+        fetched = self.store.get_loan(loan.loan_id)
+        self.assertIsNotNone(fetched)
+        assert fetched is not None
+        self.assertEqual(fetched.book_isbn, book.isbn)
+
+    def test_get_missing_loan_returns_none(self) -> None:
+        self.assertIsNone(self.store.get_loan(9999))
+
+
+class TestStorePersistence(LibraryStoreTestBase):
+    """Verify that data survives across store operations (sanity check)."""
+
+    def test_data_persists_within_session(self) -> None:
+        self.store.add_book(Book(isbn="1111111111", title="Persist", author="A", year=2020))
+        self.store.add_member("Persist", "p@e.com")
+        # Both should still be retrievable
+        self.assertIsNotNone(self.store.get_book("1111111111"))
+        self.assertEqual(len(self.store.list_members()), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+## File 6: `test_cli.py` — Unit Tests for CLI Input Validation
+
+```python
+"""
+test_cli.py
+-----------
+Unit tests for the CLI input-validation helpers in cli.py.
+
+These tests exercise the _prompt_* helpers by monkey-patching input(),
+so we can assert that invalid input is rejected and valid input is
+accepted without needing a real terminal.
+
+Run with:  python -m pytest test_cli.py -v
+"""
+
+import datetime
+import unittest
+from unittest.mock import patch
+
+import cli
+
+
+class TestPromptStr(unittest.TestCase):
+    """Tests for _prompt_str (non-empty string)."""
+
+    def test_valid_input(self) -> None:
+        with patch("builtins.input", return_value="Hello World"):
+            result = cli._prompt_str("Label")
+        self.assertEqual(result, "Hello World")
+
+    def test_empty_input_reprompts(self) -> None:
+        """First call returns empty, second returns valid."""
+        with patch("builtins.input", side_effect=["", "  Valid  "]):
+            result = cli._prompt_str("Label")
+        self.assertEqual(result, "Valid")
+
+
+class TestPromptInt(unittest.TestCase):
+    """Tests for _prompt_int (positive integer)."""
+
+    def test_valid_input(self) -> None:
+        with patch("builtins.input", return_value="42"):
+            result = cli._prompt_int("Label")
+        self.assertEqual(result, 42)
+
+    def test_negative_input_reprompts(self) -> None:
+        with patch("builtins.input", side_effect=["-5", "7"]):
+            result = cli._prompt_int("Label")
+        self.assertEqual(result, 7)
+
+    def test_non_numeric_reprompts(self) -> None:
+        with patch("builtins.input", side_effect=["abc", "12"]):
+            result = cli._prompt_int("Label")
+        self.assertEqual(result, 12)
+
+    def test_zero_reprompts(self) -> None:
+        with patch("builtins.input", side_effect=["0", "1"]):
+            result = cli._prompt_int("Label")
+        self.assertEqual(result, 1)
+
+
+class TestPromptYear(unittest.TestCase):
+    """Tests for _prompt_year (1000 ≤ year ≤ current year)."""
+
+    def test_valid_year(self) -> None:
+        with patch("builtins.input", return_value="2020"):
+            result = cli._prompt_year("Year")
+        self.assertEqual(result, 2020)
+
+    def test_year_too_low_reprompts(self) -> None:
+        with patch("builtins.input", side_effect=["500", "2020"]):
+            result = cli._prompt_year("Year")
+        self.assertEqual(result, 2020)
+
+    def test_year_in_future_reprompts(self) -> None:
+        future = datetime.date.today().year + 1
+        with patch("builtins.input", side_effect=[str(future), "2020"]):
+            result = cli._prompt_year("Year")
+        self.assertEqual(result, 2020)
+
+
+class TestPromptDate(unittest.TestCase):
+    """Tests for _prompt_date (YYYY-MM-DD)."""
+
+    def test_valid_date(self) -> None:
+        with patch("builtins.input", return_value="2025-07-01"):
+            result = cli._prompt_date("Due date")
+        self.assertEqual(result, datetime.date(2025, 7, 1))
+
+    def test_invalid_format_reprompts(self) -> None:
+        with patch("builtins.input", side_effect=["07/01/2025", "2025-07-01"]):
+            result = cli._prompt_date("Due date")
+        self.assertEqual(result, datetime.date(2025, 7, 1))
+
+    def test_nonsense_reprompts(self) -> None:
+        with patch("builtins.input", side_effect=["not-a-date", "2025-01-01"]):
+            result = cli._prompt_date("Due date")
+        self.assertEqual(result, datetime.date(2025, 1, 1))
+
+
+class TestPromptIsbn(unittest.TestCase):
+    """Tests for _prompt_isbn (10 or 13 digits, dashes ok)."""
+
+    def test_valid_10_digit(self) -> None:
+        with patch("builtins.input", return_value="1234567890"):
+            result = cli._prompt_isbn("ISBN")
+        self.assertEqual(result, "1234567890")
+
+    def test_valid_13_digit_with_dashes(self) -> None:
+        with patch("builtins.input", return_value="978-0-13-468599-1"):
+            result = cli._prompt_isbn("ISBN")
+        self.assertEqual(result, "978-0-13-468599-1")
+
+    def test_invalid_length_reprompts(self) -> None:
+        with patch("builtins.input", side_effect=["123456789", "1234567890"]):
+            result = cli._prompt_isbn("ISBN")
+        self.assertEqual(result, "1234567890")
+
+    def test_non_digit_reprompts(self) -> None:
+        with patch("builtins.input", side_effect=["abc12345", "1234567890"]):
+            result = cli._prompt_isbn("ISBN")
+        self.assertEqual(result, "1234567890")
+
+
+class TestPromptEmail(unittest.TestCase):
+    """Tests for _prompt_email (must contain @ and .)."""
+
+    def test_valid_email(self) -> None:
+        with patch("builtins.input", return_value="user@example.com"):
+            result = cli._prompt_email("Email")
+        self.assertEqual(result, "user@example.com")
+
+    def test_missing_at_reprompts(self) -> None:
+        with patch("builtins.input", side_effect=["no-at-sign.com", "u@e.com"]):
+            result = cli._prompt_email("Email")
+        self.assertEqual(result, "u@e.com")
+
+    def test_missing_dot_reprompts(self) -> None:
+        with patch("builtins.input", side_effect=["u@local", "u@e.com"]):
+            result = cli._prompt_email("Email")
+        self.assertEqual(result, "u@e.com")
+
+
+class TestCommandDispatch(unittest.TestCase):
+    """Verify the command dispatch table is complete and consistent."""
+
+    def test_all_commands_mapped(self) -> None:
+        expected = {
+            "add-book", "list-books", "search-books", "remove-book",
+            "add-member", "list-members", "remove-member",
+            "checkout", "return-book",
+            "list-loans", "list-active", "list-overdue",
+        }
+        self.assertEqual(set(cli._COMMANDS.keys()), expected)
+
+    def test_all_handlers_are_callable(self) -> None:
+        for name, handler in cli._COMMANDS.items():
+            self.assertTrue(callable(handler), f"{name} handler is not callable")
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+## How to run everything
+
+```bash
+# 1. Run the CLI interactively
+python cli.py
+
+# 2. Run all unit tests (requires pytest)
+python -m pytest test_models.py test_store.py test_cli.py -v
+
+# 3. Or use the built-in unittest runner (no pytest needed)
+python -m unittest discover -v
+```
+
+## Project layout at a glance
+
+```
+library-management/
+├── models.py          # Book, Member, Loan dataclasses + validation
+├── store.py           # LibraryStore – SQLite persistence layer
+├── cli.py             # Interactive command-line interface
+├── test_models.py     # Unit tests for data models
+├── test_store.py      # Unit tests for the SQLite store
+└── test_cli.py        # Unit tests for CLI input validation
+```
+
+### Key design decisions
+
+| Concern | Decision |
+|---|---|
+| **Data integrity** | `@dataclass(frozen=True)` makes model objects immutable; `__post_init__` validates every field at construction time. |
+| **SQL safety** | Every query uses `?` parameterised placeholders – no string interpolation. |
+| **Foreign keys** | `PRAGMA foreign_keys = ON` enforces referential integrity so you cannot delete a book/member with outstanding loans. |
+| **Test isolation** | Each test class gets a fresh `:memory:` SQLite database via `setUp` / `tearDown`. |
+| **CLI validation** | `while True` loops in `_prompt_*` helpers re-prompt until valid input is supplied; `EOFError` is caught so piping or Ctrl-D exits cleanly. |
+| **Loan lifecycle** | `create_loan` atomically flips the book's `available` flag and inserts the loan row in the same transaction; `return_loan` flips it back. |
