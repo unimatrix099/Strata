@@ -59,6 +59,63 @@ all than one at a time (16.7 tok/s in all for 4). Switching between three 64K co
 0.7-1.3 s with `--conversation-cache-mib 16384 --conversation-cache-slots 4` (the same answers; 1.5-2.4 GB of RAM per
 parked conversation).
 
+## What was tested (summary, 09 Oct)
+
+All on this PC (2x RX 7900 XTX, IQ3_XXS); the details are in the linked folders and in
+[docs/RESEARCH_2X_7900XTX.md](docs/RESEARCH_2X_7900XTX.md).
+
+**Speed, one conversation**
+
+| test | result |
+|---|---|
+| upstream as it was (06 Oct) -> production `main` | 58.0 -> ~97 tok/s (story + code); 105-108 tok/s over eight prompts |
+| the asynchronous commit + early launch (two cards, no pipeline: upstream's default) | 54.8 -> 74.5 tok/s, +36% |
+| pipeline tuning (gate 0.1, `--spec 3 --spec-min-p 0.7`, English draft vocabulary) | ~+8%, then +3% |
+| the drafter's stream priority on ROCm | before: about every other engine start ~10% slower (81-82 instead of 89-91 tok/s); after: 6 of 6 starts fast |
+| tried, no gain | later layer split, upstream's gfx1151 switches, a resident head kernel, `HIP_FORCE_DEV_KERNARG`, the VRAM reserve (installed config), the second branch for the bonus token |
+
+**Correctness of the code changes**
+
+| test | result |
+|---|---|
+| exact-text runs, every change on and off | the same text in every combination |
+| after the rebase onto upstream (393 commits) | the same text and speed as before |
+| server smoke (facts, 4.5K prompt, Anthropic API, a cancelled stream, two turns, sampled) | 7 of 7, repeatedly |
+| `tools/batch_test.py` (4 conversations against their solo runs) | as upstream: the known small drift in 2 of 4, with and without the fork's changes |
+| bugs found | `STRATA_QFUSE` with `"parallel"` slots gave garbage text (upstream fixed it, #1139); half the pipelined engine starts slow (fixed here) |
+
+**Long context, one conversation, to 128K** ([bench/results/2026-10-09-long-context-7900xtx](bench/results/2026-10-09-long-context-7900xtx/README.md))
+
+| test | result |
+|---|---|
+| a code word at 8K / 32K / 64K / 127K, depths 10 / 50 / 90% | 12 of 12 found |
+| facts spread through 34K / 63K / 119K, combined | 3 of 3 |
+| ~3,000-token reports after 32K / 67K / 122K of prompt | coherent to the end, 101 / 95 / 92 tok/s |
+| 9K-16K generated tokens (a story and a program, greedy and sampled) | no drift or garbage (the two flags were false alarms, read) |
+| a conversation grown to 96K over four turns | all four codenames recalled; each turn read only its new part |
+| prompt reading | 1,100-1,200 tok/s to 121K; the first token after 27 s at 32K, 51 s at 64K, 108 s at 121K |
+| stability | no engine error, no GTT spill |
+
+**Several conversations at once**
+
+| test | result |
+|---|---|
+| short prompts, `"parallel": 8` | 71 / 89 / 133 / 180 tok/s in all at 1 / 2 / 4 / 8; the 8th answer after ~5 s instead of 51 s |
+| 2 and 4 conversations of 64K each | all right and kept apart, no garbage; slower in all than one at a time (16.7 tok/s for 4) |
+| one wrong sum (8128 for 8228) | the model's arithmetic without thinking, the same alone; with thinking on always right |
+
+**Switching between long conversations**
+
+| test | result |
+|---|---|
+| three 64K conversations, nine alternating follow-ups | without the conversation cache 50-58 s per switch; with it 0.7-1.3 s, the same answers (9 of 9) |
+| its cost | 1.5-2.4 GB of RAM per parked 64K conversation |
+
+**Not tested:** contexts above 128K, more than 4 long conversations at once, other languages than English, images.
+
+**Use:** `"parallel"` for short-context agents; long contexts one at a time, with the conversation cache for switching
+(on in the production config).
+
 ## History
 
 | date | what | result |
