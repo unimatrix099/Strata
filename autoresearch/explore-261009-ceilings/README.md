@@ -81,7 +81,11 @@ Prompt reading is at **a third of the practical compute ceiling**. Card 1's 16.3
 | hyper-connection read, QSA projections, select, PLE, KV | 1.7 | 10% | |
 
 Card 2 has no timeline on HIP (the peer line is CUDA-only), so what bounds the chunk cadence when card 1 gets faster
-is not instrumented: with 16K chunks card 1's time fell 20% (13.1 s) and the end-to-end speed moved 1.6%.
+is not instrumented: with 16K chunks card 1's time fell 20% (13.1 s) and the end-to-end speed moved 1.6%. The likely
+bound (from the engine's start lines): card 2 holds 8,398 of its 10,752 expert pairs (78%) against card 1's 13,164 of
+13,824 (95%) - the desktop card's 3 GB reserve, the head and the draft layer take its room - so per 8192-token chunk
+it streams ~22% of 21 layers' experts, ~4 GB over PCIe (~0.6 s), against card 1's ~1.2 GB (~0.17 s). Card 1's
+"waiting for each chunk" (1.1-1.5 s per 32K prompt) is that difference; a later layer split (section 5) shortens it.
 
 ## 5. Measured today: switches on the prompt path (32K prompt, the installed config)
 
@@ -140,6 +144,12 @@ Decode (105 tok/s; the structural ceiling ~250-300, the bandwidth roofline 600):
 5. The draft chain (4 ms, 312 kernels) sits on the miss path (51% of windows): the same launch-gap problem; a merged
    chain step would shorten every miss by ~2 ms: ~+5%.
 
+Measured (step 5, `data/results.jsonl` S5-*): **device-planned layers under the pipeline** - an opt-in that let the
+E-6 device plan run with `set_always_publish` (the tier uploading the device's residency table before its fence):
+exact protocol 18.25 / 19.07 ms per window without, 18.56 / 19.62 with; the installed config 17.10 against 17.25.
+The CPU-flag wait went, the A / B waits stayed (the groups are rarely all resident at 98-99% hits per expert, and the
+doorbell ring stays under `always_publish`). No gain: the code was not kept.
+
 Prompt reading (1,400 tok/s; the practical ceiling 4,200):
 
 1. **`STRATA_PF_FUSED=1`: +45% measured today.** Not bit-identical; to adopt it in production, run the long-context
@@ -170,7 +180,9 @@ goes into the production config it needs the long checks:
 - the full long-context quality suite (`longctx.py`, ~25 min) with the candidate on - needles 8K-128K, facts, the
   ~3K-token answers after 32K-122K, 16K generations, the 96K conversation, and a read of any flagged answer;
 - the exact-protocol runs (`STRATA_IQ_MT_MIN=1 --pcie-frac 0 --adapt-every 0`, story + code x2, ~6 min) to say whether
-  it is bit-identical to the default path - `STRATA_PF_GEMM`, `--prefill 16384` and `STRATA_HC_Q8` have not had it;
+  it is bit-identical to the default path - **with `STRATA_PF_FUSED=0 STRATA_HIP_WMMA=0` in the run's environment**
+  since 09 Oct: with the production config's fused prompt path and matrix-core attention two identical starts wrote
+  different texts even under the exact protocol (step 5's base runs), so a comparison needs both off - `STRATA_PF_GEMM`, `--prefill 16384` and `STRATA_HC_Q8` have not had it;
 - the eight-prompt decode speed pairs (`bench_many.py`, alternating with the production engine, 3 pairs, ~30 min) for
   any decode change claiming under 5%;
 - several conversations at once (`"parallel"` 4 at 64K) and the conversation cache switches, for a change on the
