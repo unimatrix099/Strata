@@ -1,0 +1,118 @@
+# Technical Report: Strata Architecture and Implementation
+
+## Executive Summary
+
+Strata is a high-performance inference engine designed to run large Mixture-of-Experts (MoE) models, specifically the Qwen3.8-Flash-Next family, on consumer-grade hardware. The core architectural innovation is the distribution of model weights across the entire PC hierarchy—GPU VRAM, system RAM, and NVMe SSD—rather than forcing the entire model into a single memory tier. By leveraging a "guess-and-check" speculative decoding mechanism and a sophisticated expert caching strategy, Strata enables models with hundreds of gigabytes of potential weight footprint to run efficiently on machines with 12–24 GB of VRAM and 32–64 GB of RAM.
+
+This report details the system architecture, the memory hierarchy strategy, the speculative decoding pipeline, cross-platform backend implementations (NVIDIA, AMD, Intel), and the specific engineering decisions regarding data formats, file I/O, and multi-GPU orchestration.
+
+## 1. Core Architecture: The Memory Hierarchy Strategy
+
+The fundamental challenge addressed by Strata is the mismatch between the size of modern MoE models (often >100 GB) and the capacity of consumer GPUs (12–24 GB). Strata solves this by treating the PC as a unified, tiered storage system.
+
+### 1.1 The Expert Distribution Model
+The Qwen3.8-Flash-Next model consists of 48 layers, each containing 512 "experts" (small feed-forward networks). For any given token, only 10 experts per layer are activated. Strata does not load all experts into VRAM. Instead, it employs a three-tier hierarchy:
+
+1.  **GPU VRAM (Hot Tier):** The GPU holds the dense weights (attention mechanisms, routers, shared experts) and a dynamic **Expert Cache**. This cache stores the most frequently used experts based on a profiling mechanism. As the user interacts with the model, the engine adapts the cache, swapping out rarely used experts for those currently in demand.
+2.  **System RAM (Warm Tier):** All 24,576 experts are mapped into pinned system RAM. When a token requires an expert not present in the GPU cache, the CPU computes it using AVX-512 or AVX2 kernels. Crucially, this CPU computation happens **in parallel** with the GPU’s processing of cached experts, preventing the GPU from idling while waiting for CPU results.
+3.  **SSD (Cold Tier):** A 28.8 GB n-gram lookup table (PLE - Per-Layer Embedding) resides on the SSD. The engine reads only the specific rows required for the current token, leveraging the OS file cache for speed.
+
+### 1.2 Low-RAM Mode
+For systems with limited RAM (e.g., 32 GB) but large VRAM (e.g., 24 GB), Strata offers a "Low-RAM Mode." In this configuration, the engine maps experts directly from the GGUF files on disk into the GPU’s virtual memory space or keeps only the experts *not* held by the GPU in RAM. This reduces the resident RAM footprint significantly, relying on the GPU’s larger capacity to hold the "hot" experts.
+
+## 2. Speculative Decoding: "Guess, Then Check"
+
+To maximize throughput, Strata implements a speculative decoding pipeline that decouples token generation from verification.
+
+### 2.1 The MTP Draft Layer
+The model includes a Multi-Token Prediction (MTP) layer, a lightweight auxiliary network trained to predict the next few tokens. Strata uses this layer to draft up to 3–4 tokens ahead.
+
+1.  **Drafting:** The MTP layer generates a sequence of candidate tokens.
+2.  **Verification:** The main model (48 layers) processes these candidates in a single batched pass.
+3.  **Acceptance:** The engine compares the main model’s output with the draft. If they match, multiple tokens are accepted in one step. If they diverge, the engine accepts the correct prefix and discards the rest.
+
+This mechanism increases effective throughput by 1.6–1.8x because the expensive verification pass amortizes the cost of generating multiple tokens.
+
+### 2.2 Prompt Lookup
+For repetitive contexts (e.g., code editing or quoting), Strata employs "Prompt Lookup." It scans the existing context for matching n-grams and drafts tokens from the earlier copy. This is gated by a cost-benefit analysis: if the measured acceptance rate and computational cost indicate a net gain, the lookup drafts are used; otherwise, the engine falls back to the MTP layer.
+
+## 3. Backend Implementations and Portability
+
+Strata is primarily a CUDA engine but has been ported to AMD (HIP) and Intel (SYCL) to support a wider range of hardware.
+
+### 3.1 NVIDIA (CUDA)
+The native engine uses CUDA kernels optimized for Ampere (RTX 30), Ada (RTX 40), and Blackwell (RTX 50) architectures. It utilizes Tensor Cores for dense projections and specialized kernels for MoE expert selection. Support for older architectures (Volta, Pascal) is maintained via a separate CUDA 12 build, which uses FP16 tensor cores for BF16 projections and emulated integer dot products where necessary.
+
+### 3.2 AMD (HIP/ROCm)
+The AMD backend is a direct port of the CUDA engine using HIP. It supports RDNA2 (RX 6800/6900), RDNA3 (RX 7900), and RDNA4 (RX 9070) architectures. Key adaptations include:
+*   **Wavefront Handling:** Adjusting kernel launch configurations for AMD’s wavefront sizes (32 vs 64 lanes).
+*   **Matrix Cores:** Utilizing WMMA (Wavefront Matrix Multiply Accumulate) instructions for prompt attention and GEMMs on RDNA3.5 (Strix Halo) and RDNA4.
+*   **Unified Memory:** On Strix Halo APUs, the engine treats system RAM and GPU VRAM as a unified pool, optimizing allocation to avoid page faults and maximize bandwidth.
+
+### 3.3 Intel (SYCL)
+The Intel port is a migration of the CUDA engine to SYCL using oneAPI. It is experimental and primarily validated on Arc Pro B70 and A750 cards.
+*   **Migration Tooling:** The port was generated using SYCLomatic (dpct) to translate CUDA kernels, followed by manual "fixups" for issues like incorrect stream handling, missing parentheses in floating-point operations, and differences in memory visibility between host and device.
+*   **Level Zero Driver Issues:** The port addresses specific driver behaviors, such as the need for bounded spin-waits to prevent GPU hangs and the use of system-scope atomics for host-device communication.
+*   **Performance:** On Arc Pro B70, the SYCL port achieves ~78 tok/s decode speed, significantly outperforming llama.cpp’s SYCL backend (~25 tok/s) due to Strata’s optimized expert streaming and speculative decoding.
+
+## 4. Data Formats and Artifact Management
+
+Strata relies on GGUF (GPT-Generated Unified Format) files but implements a custom packing and loading pipeline to optimize for its specific architecture.
+
+### 4.1 The Pack System
+Strata does not load raw GGUF files directly for inference. Instead, it "packs" them into a proprietary format (`packs/`) that separates dense weights from expert weights.
+*   **Dense Pack:** Contains attention, router, and shared expert weights, optimized for GPU loading.
+*   **Native Experts:** Expert weights are kept in their original GGUF quantization formats (IQ2_XS, IQ3_XXS, Q4_K, etc.) to allow the engine to read them directly from RAM or SSD without full dequantization overhead during streaming.
+*   **Compatibility Conversion:** For models like Unsloth’s UD-Q4_K_XL, the packer converts certain projections (stored as Q8_0 in the GGUF) to BF16 to match the engine’s internal precision requirements, ensuring numerical stability.
+
+### 4.2 Dequantization and Parity
+The engine includes a `strata-dequant` CLI tool and internal dequantization kernels. A critical design decision is **bitwise parity**. Strata aims to produce outputs identical to llama.cpp or the original model where possible.
+*   **Structural Invariants:** The dequantization code enforces strict mathematical invariants (e.g., Q2_0 values must be exactly `-d`, `0`, `d`, or `2d`).
+*   **Cross-Implementation Checks:** The system uses checksums and reference implementations (Python vs C++) to detect rounding errors or implementation bugs in quantization kernels.
+
+### 4.3 Session File Format
+Strata implements a custom binary format for saving and restoring conversation states (`conversation_file.cpp`).
+*   **Atomic Writes:** Session files are written to temporary files and renamed atomically to prevent corruption during crashes.
+*   **Direct I/O:** On Linux, the engine uses `O_DIRECT` for session files to bypass the page cache, preventing large session dumps from evicting model weights from RAM.
+*   **Endianness and Precision:** The format is strictly little-endian and IEEE-754 compliant, with static assertions to ensure the host architecture matches the file format expectations.
+
+## 5. Multi-GPU Orchestration
+
+Strata supports layer-splitting across multiple GPUs, allowing users to combine cards (e.g., an RTX 3090 and an RTX 4090) to increase total VRAM capacity.
+
+### 5.1 Layer Splitting
+The model’s 48 layers are divided into contiguous ranges assigned to each GPU.
+*   **Pipeline Parallelism:** Tokens flow from GPU 0 to GPU 1, etc. This is not tensor parallelism; each GPU holds the full dense weights for its assigned layers but only a subset of the experts.
+*   **Hand-off Optimization:** To minimize latency between GPUs, Strata implements:
+    *   **Asynchronous Commits:** GPU 0 does not wait for GPU 1 to finish before starting the next window.
+    *   **Early Launch:** GPU 1’s kernel graph is launched while GPU 0 is still running, waiting on a flag for the data hand-off.
+    *   **Combined Kernels:** The CPU’s expert results and the GPU’s results are combined in a single kernel to reduce launch overhead.
+
+### 5.2 Helper Caches and Peer Devices
+For systems with a primary GPU and a secondary GPU (e.g., a low-end card used as a helper), Strata offers two modes:
+*   **Helper Caches:** Secondary GPUs hold experts that the primary GPU cannot fit. The primary GPU requests these experts over PCIe.
+*   **Peer Devices:** A secondary GPU acts as an adaptive expert cache, computing rows for experts it holds and sending results back to the primary GPU. This is distinct from layer splitting and is useful for offloading expert computation without splitting the model layers.
+
+## 6. Notable Design Decisions and Engineering Trade-offs
+
+### 6.1 CPU/GPU Overlap
+A central tenet of Strata’s design is the independence of CPU and GPU resources. The engine assumes that CPU expert computation (bound by DRAM bandwidth) and GPU expert streaming (bound by PCIe bandwidth) can occur concurrently. The `concurrent_main.cpp` test explicitly measures this contention, confirming that the two paths do not significantly interfere, allowing for high aggregate throughput.
+
+### 6.2 Adaptive Expert Caching
+The expert cache is not static. It uses a profiling mechanism (`expert-profile.bin`) to rank experts by usage frequency. During inference, the engine performs "adaptive swaps," moving frequently used experts into VRAM and evicting cold ones. This adaptation happens in the background, ensuring that the cache reflects the current conversation context.
+
+### 6.3 Experimental Features and Safety
+Strata includes several experimental features that are opt-in due to potential numerical or stability risks:
+*   **Speed Projection:** An experimental feature that modifies model behavior for speed, disabled by default.
+*   **Context Extension:** Rope scaling allows contexts beyond the trained 262K tokens, but this is marked experimental.
+*   **VRAM Elasticity:** An API (`POST /v1/vram`) allows dynamic resizing of the expert cache to free VRAM for other applications (e.g., games). This is implemented with careful segment management to avoid fragmentation and ensure data integrity.
+
+### 6.4 Handling Hardware Quirks
+The codebase contains numerous workarounds for specific hardware behaviors:
+*   **Intel Arc:** Requires disabling persistent JIT caches to prevent segfaults and using bounded spin-waits to avoid driver timeouts.
+*   **AMD RDNA3:** Requires specific VRAM reserves to prevent the OS from spilling GPU memory to system RAM, which causes massive performance drops.
+*   **Windows Processor Groups:** On Threadripper CPUs, the engine implements group-aware thread affinity to ensure CPU workers are pinned to the correct NUMA nodes/processor groups, preventing performance degradation due to cross-group memory access.
+
+## 7. Conclusion
+
+Strata represents a sophisticated approach to local LLM inference, moving beyond simple model loading to a holistic system optimization. By treating the PC as a tiered storage system, leveraging speculative decoding, and implementing highly optimized, cross-platform backends, it enables the execution of massive MoE models on consumer hardware. The engineering focus on bitwise parity, adaptive caching, and careful handling of hardware-specific quirks demonstrates a deep understanding of both the model architecture and the underlying computing platforms. While some features remain experimental, the core engine provides a robust, high-performance alternative to traditional inference frameworks for users with heterogeneous hardware configurations.

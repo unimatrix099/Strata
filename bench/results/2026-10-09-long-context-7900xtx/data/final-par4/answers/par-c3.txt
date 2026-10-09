@@ -1,0 +1,46 @@
+Based on the "Note for the auditors" embedded within the provided documentation, here are the requested details:
+
+1.  **Access code of vault BETA:** **4381**
+    *   *Derivation:* The note in `docs/SECOND_GPU.md` states: "the access code of vault BETA is the code of vault ALPHA plus 1907." The note in `docs/MESSAGE_BOUNDARY_CACHE.md` states: "the access code of vault ALPHA is 2474." Therefore, $2474 + 1907 = 4381$.
+2.  **Courier of vault GAMMA:** **Mirela Toma**
+    *   *Source:* The note in `docs/VRAM_ELASTIC.md` states: "the courier assigned to vault GAMMA is Mirela Toma."
+
+***
+
+### Summary of Strata Documentation and Source Code
+
+The provided text comprises a comprehensive collection of documentation, configuration guides, research findings, and source code snippets for **Strata**, a high-performance local inference engine designed to run large language models (specifically the Qwen3.8-Flash-Next family) on consumer and professional hardware. The materials cover installation, hardware compatibility, performance optimization, multi-GPU strategies, and internal code structures.
+
+#### Installation and Configuration
+The documentation begins with setup instructions for integrating Strata with various AI clients, including Cursor, VS Code (via GitHub Copilot), and Codex CLI. It details the Model Context Protocol (MCP) configuration, specifying how to launch the `strata_mcp.py` tool using Python. The core installation process is managed by `setup.py` (or `START-HERE.bat` on Windows), which handles model downloads, virtual environment creation, and engine compilation. The system is designed to be safe, refusing shell execution and enforcing strict path validation to prevent security risks.
+
+#### Model Selection and Hardware Requirements
+A significant portion of the text focuses on selecting the appropriate model size based on the user's hardware, particularly RAM and VRAM. The models are quantized versions of Qwen3.8-Flash-Next, ranging from highly compressed formats like `Q2_0` and `IQ2_XS` to higher-quality but more resource-intensive versions like `IQ3_S` and Unsloth’s `UD-IQ4_XS`.
+*   **RAM Guidelines:** Users with 32 GB RAM are recommended the "Coder" model (which drops half the experts to fit), while those with 64 GB or more can run larger, higher-quality models.
+*   **Low-RAM Mode:** For PCs with limited RAM but powerful GPUs, Strata employs a "low-RAM mode" that maps experts from the SSD or keeps them in RAM while offloading dense weights to the GPU.
+*   **Speed Metrics:** Detailed benchmarks compare token generation speeds (decode) and prompt processing speeds (prefill) across different model sizes and hardware configurations (e.g., RTX 5070 vs. AMD RX 9070 XT).
+
+#### Multi-GPU and Advanced Optimization
+Strata supports sophisticated multi-GPU configurations, primarily through **layer splitting** (pipeline parallelism). This allows a model to be split across multiple NVIDIA or AMD cards, where each card handles a contiguous range of layers.
+*   **Layer Split:** The engine automatically or manually assigns layers to GPUs. Recent updates have optimized the "hand-off" between cards, reducing latency by launching subsequent GPU windows early and avoiding synchronous commits. This has resulted in significant speedups (e.g., +36% on dual RX 7900 XTX cards).
+*   **Pipeline Windows:** An experimental feature (`--pipeline-windows`) allows cards to overlap work by guessing the next token, further increasing throughput.
+*   **Expert Caching:** The engine uses an adaptive expert cache to keep frequently used "experts" (parts of the Mixture-of-Experts model) in VRAM or pinned RAM, falling back to CPU or SSD for less frequent ones. Research documents detail the trade-offs between VRAM, RAM, and SSD access speeds, noting that expert caching primarily benefits decode speed rather than prompt reading.
+
+#### Hardware-Specific Guides
+The documentation includes detailed guides for specific hardware architectures:
+*   **NVIDIA:** Covers supported cards (RTX 20 series and newer) and experimental support for older cards (Tesla V100, P100) via a CUDA 12 engine. It details kernel optimizations for Volta and Pascal architectures.
+*   **AMD:** Extensive support for RDNA3 (RX 7900 XTX) and RDNA4 (RX 9070 XT) cards, including specific tuning tables for hipBLASLt and workarounds for driver timeouts (TDR).
+*   **Strix Halo (Ryzen AI Max):** A guide for the unified memory architecture of the Ryzen AI Max+ 395, detailing how to build the engine for `gfx1151` and which switches to enable for optimal performance in unified memory environments.
+
+#### Troubleshooting and Research
+The `TROUBLESHOOTING.md` file addresses common issues such as PC freezing during startup, driver conflicts, and slow performance due to insufficient RAM. It provides specific fixes for Windows Smart App Control blocks, Linux OOM kills, and AMD driver resets.
+
+Research documents (`RESEARCH_2X_7900XTX.md`, `RESEARCH_RUNS.md`) provide deep dives into performance ceilings, kernel fusion experiments, and the effectiveness of features like `strata_prefix` for long-document Q&A tasks. These documents highlight that while multi-GPU setups improve throughput, the bottleneck often lies in kernel launch overhead and PCIe bandwidth rather than raw compute power.
+
+#### Source Code Snippets
+The provided C++ code snippets illustrate the engine's internal mechanisms:
+*   **`dequant.cpp`:** A self-test tool for verifying the correctness of quantization dequantizers (e.g., Q2_0, Q5_0, IQ4_NL). It checks structural invariants and computes checksums to ensure data integrity.
+*   **`gguf_reader.cpp`:** A utility for reading GGUF model files, validating tensor geometry, and checking for duplicate tensor names to prevent loading errors.
+*   **`arch_defaults.cpp`:** Code that automatically sets environment variables for specific GPU architectures (like `gfx1151` for Strix Halo) to enable optimized kernels and features by default, ensuring users get the best performance without manual configuration.
+
+In summary, these files represent a mature, highly optimized local LLM inference system that balances ease of use with deep technical customization, catering to a wide range of hardware from consumer GPUs to specialized APUs and older datacenter cards.

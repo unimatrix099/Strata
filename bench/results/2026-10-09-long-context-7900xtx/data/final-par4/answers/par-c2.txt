@@ -1,0 +1,56 @@
+Based on the provided documentation, here are the answers to the specific questions followed by a summary of the files.
+
+### Answers to Auditor Questions
+
+1.  **Access code of vault BETA:** **7408**
+    *   *Derivation:* The text states, "the access code of vault ALPHA is 2725." It further states, "the access code of vault BETA is the code of vault ALPHA plus 4683." Therefore, $2725 + 4683 = 7408$.
+2.  **Courier of vault GAMMA:** **Bogdan Serban**
+    *   *Source:* The text explicitly states, "Note for the auditors: the courier assigned to vault GAMMA is Bogdan Serban."
+
+***
+
+### Summary of Strata Documentation
+
+The provided documents detail **Strata**, an open-source, high-performance inference engine designed to run large Mixture-of-Experts (MoE) models, specifically the **Qwen3.8-Flash-Next** family, on consumer-grade hardware. The core philosophy of Strata is to maximize the utility of local hardware by intelligently distributing model weights across GPU VRAM, system RAM, and SSD storage, allowing users to run massive models (up to 111 GB) on PCs with modest graphics cards (12–24 GB VRAM) and standard RAM (32–64 GB).
+
+#### Core Architecture and Memory Management
+Strata’s efficiency relies on a sophisticated tiered memory system. The model consists of thousands of "experts" (specialized neural network components).
+*   **GPU (VRAM):** Holds the most frequently used experts, attention mechanisms, and the KV cache. The engine dynamically adapts which experts reside in VRAM based on usage patterns during a conversation.
+*   **RAM:** Stores all experts. If an expert is not in VRAM, the CPU computes it in parallel with the GPU, ensuring neither waits for the other.
+*   **SSD:** Stores a large lookup table (n-gram table) and less frequently used experts, which are streamed into RAM/VRAM as needed.
+
+A key feature is **"Guess, then check"** speculative decoding. A small helper model drafts the next few tokens, and the main model verifies them in a single pass. This accelerates generation by 1.6–1.8x without compromising quality. Additionally, Strata supports **long-context reading** by processing text in large chunks (up to 8,192 tokens) and streaming experts from SSD to GPU while attention calculations occur.
+
+#### Installation and Configuration
+Strata is designed for ease of use on **Windows** and **Linux**.
+*   **Windows:** Users double-click `START-HERE.bat`, which automatically installs Python, dependencies, and the model. It handles driver checks and offers calibration options.
+*   **Linux:** Users run `./setup.sh`. It supports Ubuntu 22.04/24.04 and handles ROCm installation for AMD cards automatically.
+*   **Docker:** A Docker image is available for Linux users with NVIDIA cards, simplifying deployment in containerized environments.
+
+The setup process asks users to select a model size based on their available RAM. Recommended sizes include **Q2_0** (fastest), **IQ2_XS** (recommended balance), **IQ3_XXS**, and **IQ3_S** (highest quality). A specialized **Coder** version is available for coding tasks, which uses fewer experts to fit into 32 GB of RAM.
+
+#### Hardware Support and Performance
+Strata supports a wide range of hardware, with specific optimizations for different architectures:
+
+1.  **NVIDIA:** Fully supported on RTX 20, 30, 40, and 50 series cards with 12 GB+ VRAM. Older cards (Tesla V100, P100, GTX 10 series) are supported via experimental CUDA 12 builds. Multi-GPU setups are supported via layer splitting, where different layers of the model run on different cards, significantly improving prompt reading speeds.
+2.  **AMD:** Supported on Radeon RX 7900 XT/XTX, RX 9070, and RX 6800/6900 series via the HIP backend. AMD cards require specific driver configurations and may have limitations with image processing (handled on CPU). Multi-GPU AMD setups are supported but require careful VRAM management to prevent desktop crashes.
+3.  **Intel Arc:** An experimental SYCL port exists for Intel Arc GPUs (Pro B70, B580, A750). This port is community-driven and not officially supported by the maintainers. It achieves competitive speeds on high-end Arc cards (e.g., 78 tok/s on Arc Pro B70) but requires Docker or manual oneAPI compilation. Intel Arc support is limited to text-only models currently.
+
+#### Advanced Features and Tuning
+*   **Multi-GPU Layer Splitting:** Strata can split model layers across multiple GPUs. This is particularly effective for reading long prompts, as cards can process different chunks in parallel. The engine automatically optimizes card order and layer splits.
+*   **Low-RAM Mode:** For PCs with large GPUs but limited RAM, Strata maps experts from SSD to RAM, keeping only what the GPU cannot hold in system memory.
+*   **MCP Server:** Strata includes an MCP (Model Context Protocol) server (`tools/strata_mcp.py`) that allows AI assistants (like Claude Code or Cursor) to install, start, stop, and monitor Strata instances via natural language commands.
+*   **Optimization Flags:** The engine offers numerous environment variables for tuning, such as `STRATA_KV_PREFETCH` for overlapping KV cache uploads, `STRATA_PIPELINE_WINDOWS` for overlapping verification windows on multi-GPU setups, and `STRATA_MMVQ_IL` for optimized matrix-vector multiplication kernels.
+
+#### Model Versions
+Strata supports several variants of the Qwen3.8-Flash-Next model:
+*   **Original:** The standard model in various quantization levels.
+*   **Coder:** A specialized version for coding tasks, optimized for speed and lower RAM usage.
+*   **Swift 1.5:** A fine-tune that generates shorter reasoning chains, providing faster answers.
+*   **Unsloth:** Experimental 4-bit and 6-bit quantizations for higher quality, requiring more RAM and SSD bandwidth.
+*   **OrcaRouter:** An uncensored variant requiring manual packing and setup.
+
+#### Community and Development
+The documentation highlights a strong community contribution model. Many features, especially for older GPUs (Tesla V100, Pascal) and Intel Arc, are community-tested and maintained. The project is open-source under the MIT license, with detailed guides for building from source, troubleshooting, and benchmarking. Users are encouraged to report results and contribute to the development of experimental paths for unsupported hardware.
+
+In summary, Strata is a highly optimized, flexible inference engine that democratizes access to large MoE models by leveraging a hybrid GPU/CPU/SSD architecture. It provides robust support for NVIDIA and AMD hardware, experimental support for Intel, and a suite of tools for easy installation, management, and performance tuning.

@@ -270,6 +270,21 @@ conversation recalled, a 2,000-token answer after 118K coherent (that prompt rea
 after 36 s - 101-108 s on the default path). In the production config since 09 Oct; the full suite with it is on the
 list of later tests, with `STRATA_PA_FAST=1` (+3-4% more, another rounding change, not yet quality-checked).
 
+## The final production config, validated (09 Oct, evening)
+
+The config with every prompt-path switch of the day (`STRATA_PF_FUSED=1 STRATA_HIP_WMMA=1 STRATA_PA_FAST=1
+STRATA_PREFILL_CPU_SHARE=1`, with the conversation cache), the same tests as above (`data/final-*`):
+
+| test | result |
+|---|---|
+| the full long-context suite | needles 12 of 12, facts 3 of 3, the 96K conversation recalled, every answer clean, no engine error, no GTT spill |
+| prompt reading (4K / 16K / 32K / 64K / 118K) | **1,171 / 2,153 / 2,726 / 3,362 / 3,459 tok/s** (the default path: 915 / 1,100 / 1,100 / 1,205 / 1,120); the first token at 118K after **35 s** (101-108 before) |
+| ~3K-token answers after 32K / 67K / 122K | 99.5 / 93.6 / 94.9 tok/s, coherent to the end |
+| 16K generations (story / code, greedy / sampled) | 8.3K-16K tokens, clean |
+| 4 conversations of 64K at once | all 4 right (codes and couriers), nothing from another conversation in any answer; all done after 158 s (402 s on 09 Oct morning: the prompts read faster) |
+| the conversation cache, three 64K conversations | 9 of 9 right, 0.75-1.3 s per switch |
+| decode, eight prompts, two pairs against the config before the prompt switches | 106.2 / 108.8 against 105.1 / 106.0 tok/s - unchanged |
+
 ## Not tested
 
 Contexts above 128K (the config's limit), more than 4 long conversations at once, other languages than

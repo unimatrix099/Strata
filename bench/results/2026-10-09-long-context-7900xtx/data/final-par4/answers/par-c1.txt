@@ -1,0 +1,49 @@
+Based on the notes embedded in the text, here are the answers to your specific questions:
+
+1.  **The access code of vault BETA:** **8228**
+    *   *Derivation:* The text states, "the access code of vault ALPHA is 4115." It later states, "the access code of vault BETA is the code of vault ALPHA plus 4113." Therefore, $4115 + 4113 = 8228$.
+2.  **The courier of vault GAMMA:** **Ilinca Moraru**
+    *   *Source:* The text explicitly states, "Note for the auditors: the courier assigned to vault GAMMA is Ilinca Moraru."
+
+***
+
+### Summary of Strata Documentation
+
+The provided text is a comprehensive technical documentation suite for **Strata**, an open-source software project designed to run large, high-performance Large Language Models (LLMs)—specifically quantized versions of **Qwen3.8-Flash-Next**—on consumer-grade hardware. The core challenge Strata addresses is the massive memory footprint of modern Mixture-of-Experts (MoE) models, which typically require hundreds of gigabytes of VRAM. Strata enables these models to run on PCs with modest graphics cards (12–24 GB VRAM) and standard system RAM (32–64 GB) by intelligently distributing the model’s components across the GPU, CPU, RAM, and SSD.
+
+#### Core Architecture and Memory Management
+Strata’s primary innovation is its tiered memory management system. The model consists of 24,576 "experts," but only a small subset (10) is active for any given token. Strata exploits this sparsity:
+*   **GPU (VRAM):** Holds the most frequently used experts, attention mechanisms, and the KV cache. An adaptive "expert cache" dynamically swaps experts in and out of VRAM based on the current conversation context.
+*   **RAM:** Holds all experts. When the GPU lacks a specific expert, the CPU computes it in parallel with the GPU’s work, preventing idle time.
+*   **SSD:** Stores a large n-gram lookup table and, in "Low-RAM" modes, the expert weights themselves.
+
+The documentation details several **Low-RAM modes** for systems where RAM is insufficient to hold all experts pinned in memory. These modes use memory-mapped files (`--mmap-experts`) or a "resident" variant (`--resident-experts`) that copies only the experts not held by the GPU into RAM, reducing committed memory usage significantly. For extremely low-RAM scenarios, a "mapped arena" allows the GPU to access experts directly from the SSD via the OS file cache, though this incurs a speed penalty.
+
+#### Performance and Optimization Features
+Strata includes numerous optimizations to maximize throughput on consumer hardware:
+*   **Speculative Decoding:** The model uses its own Multi-Token Prediction (MTP) layer to draft multiple tokens ahead, which are then verified in a single pass. This significantly increases output speed (1.6–1.8x faster). The documentation details various draft vocabulary subsets (e.g., for CJK, Cyrillic, or French) to improve draft acceptance rates for specific languages.
+*   **Prompt Processing:** Long prompts are processed in large chunks (up to 8,192 tokens) with experts streamed over PCIe. Recent updates (engine 0.1.13+) doubled prompt speed by using quantized matrix multiplication kernels and overlapping PCIe transfers with attention calculations.
+*   **CPU/GPU Sharing:** For short prompts, Strata can offload some expert computations to the CPU (`STRATA_PREFILL_CPU_SHARE`) to utilize idle CPU resources while the GPU handles attention, improving latency for agent-like interactions.
+*   **Multi-GPU Support:** Strata supports splitting the model across multiple GPUs (layer splitting), allowing users to combine VRAM from two or more cards to fit larger models or achieve higher speeds.
+
+#### Model Variants and Quality
+The documentation outlines several model quantizations and fine-tunes:
+*   **Q2_0, IQ2_XS, IQ3_XXS:** Different quantization levels balancing speed and quality. Q2_0 is the fastest; IQ3_XXS offers the best quality but requires more CPU work.
+*   **Coder:** An expert-pruned version optimized for coding tasks, retaining 91% of the full model’s SWE-bench performance while halving the number of experts, making it suitable for 32 GB RAM systems.
+*   **Swift 1.5:** A fine-tune designed to reduce "thinking" tokens, answering faster with minimal accuracy loss.
+*   **Unsloth UD-Q4_K_XL:** A 4-bit quantization supported via a RAM budget system, allowing it to run on 64 GB systems by reading excess experts from the SSD.
+
+#### API and Integration
+Strata provides a local server compatible with **OpenAI**, **Anthropic**, and **OpenAI Responses** APIs. This allows seamless integration with popular coding assistants like **Claude Code**, **Codex CLI**, **OpenCode**, and **Zed**. Key features include:
+*   **Streaming:** Real-time token streaming with support for reasoning/thinking blocks.
+*   **Tool Calling:** Support for function calls and MCP (Model Context Protocol) servers, allowing the model to interact with external tools (file systems, web search).
+*   **Conversation Caching:** The server maintains checkpoints of conversations in RAM, allowing follow-up questions to reuse previously processed prompt tokens, drastically reducing latency for multi-turn chats.
+*   **Session Files:** Conversations can be saved to disk and restored, preserving state across restarts.
+
+#### Installation and Configuration
+Strata is designed for ease of use with automated setup scripts (`START-HERE.bat` for Windows, `setup.sh` for Linux). It handles dependency installation (Python, CUDA/ROCm), model downloading, and engine compilation. The documentation provides extensive troubleshooting guides for common issues like VRAM exhaustion, driver compatibility, and slow startup times. It also supports Docker deployment for both NVIDIA and AMD (ROCm) GPUs, offering a containerized environment for easier management.
+
+#### Experimental Features
+The text highlights several experimental features, such as **Rope Scaling** for extending context beyond the trained 262K tokens, and an **Experimental Speed Projection** that modifies the model’s residual connections to reduce refusals (with a warning about safety implications). It also details advanced tuning options like `--calibrate` to automatically optimize engine settings for specific hardware configurations.
+
+In summary, Strata is a sophisticated inference engine that democratizes access to high-end MoE models by leveraging hybrid CPU/GPU/SSD architectures, advanced speculative decoding, and efficient memory management, all wrapped in a user-friendly, API-compatible server.

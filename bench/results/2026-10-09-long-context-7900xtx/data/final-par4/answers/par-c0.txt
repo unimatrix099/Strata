@@ -1,0 +1,43 @@
+Based on the provided documentation, here are the answers to the specific questions followed by a summary of the files.
+
+### Specific Answers
+
+1.  **Access code of vault BETA:** **7857**
+    *   *Derivation:* The text states, "the access code of vault ALPHA is 3743." It later states, "the access code of vault BETA is the code of vault ALPHA plus 4114." Therefore, $3743 + 4114 = 7857$.
+2.  **Courier of vault GAMMA:** **Teodora Vlasic**
+    *   *Source:* The text explicitly states, "the courier assigned to vault GAMMA is Teodora Vlasic."
+
+***
+
+### Summary of Strata Documentation
+
+The provided documents constitute a comprehensive technical manual and performance benchmarking report for **Strata**, a high-performance inference engine designed to run large language models (LLMs), specifically the Qwen3.8-Flash-Next family, on consumer and professional hardware. The documentation covers installation, hardware compatibility (primarily AMD ROCm and NVIDIA CUDA), performance tuning, API usage, and advanced features like speculative decoding and multi-GPU splitting.
+
+#### Core Architecture and Performance Philosophy
+Strata is engineered to maximize throughput on systems with limited VRAM by leveraging a hybrid CPU/GPU architecture. The engine uses a "low-RAM mode" where model experts (parts of the Mixture-of-Experts architecture) are stored in system RAM or mapped from disk, while the most frequently accessed experts are cached in VRAM. This allows large models (requiring 60–100+ GB of weights) to run on machines with as little as 32 GB of RAM and modest GPUs (e.g., RTX 5070, RX 7900 XTX).
+
+The documentation emphasizes that **VRAM capacity is critical for speed**, but **system RAM capacity is critical for feasibility**. The engine dynamically adapts its expert cache based on the conversation context, swapping experts between VRAM and RAM to maintain high hit rates. Performance is heavily influenced by PCIe bandwidth, CPU core count (AVX2/AVX-512 support), and storage speed (NVMe recommended).
+
+#### Hardware Support and Tuning
+A significant portion of the text is dedicated to hardware-specific validation and tuning, particularly for AMD GPUs using the HIP backend (ROCm).
+
+*   **AMD GPUs (RX 7900 XTX, RX 9070 XT, etc.):** The documentation details extensive tuning for `gfx1100` and `gfx1201` architectures. Key findings include the importance of `hipBLASLt` tuning tables, which can double prompt processing speeds by optimizing GEMM operations. It also discusses specific workarounds for memory management issues, such as preventing GPU memory from being swapped to system RAM (GTT) by adjusting VRAM reserves and GPU ordering in multi-GPU setups. For example, on a dual RX 7900 XTX setup, incorrect configuration caused 21.3 GB of data to spill into system RAM, drastically reducing speed. Correcting the GPU order and increasing VRAM reserves restored performance, increasing decode speeds from ~15 tok/s to ~70 tok/s.
+*   **NVIDIA GPUs:** The engine supports RTX 20 through 50 series. It highlights the use of fused int8 kernels for prompt processing and tensor-core optimizations for attention mechanisms.
+*   **Older/Integrated GPUs:** Support is documented for older cards like the Instinct MI50 (gfx906) and integrated APUs like the Radeon 890M (gfx1150), though these require manual builds and specific kernel adjustments (e.g., wave64 vs. wave32).
+
+#### Key Features and Optimizations
+
+1.  **Speculative Decoding (MTP):** Strata uses Multi-Token Prediction (MTP) to draft multiple tokens ahead, which are then verified by the main model. This significantly increases decode speed. The documentation details various drafting strategies, including "coupled drafts" and "Gumbel-max" sampling, which improve draft acceptance rates for sampled (non-greedy) requests.
+2.  **Batching and Concurrency:** The engine supports serving multiple requests simultaneously via "batch slots." This allows several conversations to be decoded in parallel, sharing dense weights and experts. While this increases total throughput, it can slightly reduce per-request speed due to increased VRAM usage for state management.
+3.  **Prompt Processing:** Long prompts are processed in chunks. The engine uses "prefill" optimizations, including CPU/GPU sharing for short prompts and specialized kernels for attention (QSA) and recurrence (GDN). Tuning tables for `hipBLASLt` are crucial for maximizing prompt speed on AMD cards.
+4.  **Conversation Caching:** To avoid re-reading long contexts, Strata maintains a conversation cache. It can "park" conversations in RAM, allowing users to switch between chats without re-processing the entire history. Session files allow saving and restoring conversation state to disk, enabling persistence across engine restarts.
+5.  **Vision Support:** The engine supports image inputs via a vision encoder (ViT). It can run the encoder on the GPU or CPU, with options to adjust image token counts and quantization levels (BF16 vs. Q8_0) to balance speed and accuracy.
+
+#### API and Integration
+Strata exposes an OpenAI-compatible API (`/v1/chat/completions`) and an Anthropic-compatible API (`/v1/messages`). It also supports the newer OpenAI Responses API, making it compatible with tools like Codex CLI. The server includes monitoring endpoints (`/metrics`, `/status`) compatible with Prometheus and Grafana, providing real-time insights into token throughput, cache hit rates, and hardware usage.
+
+#### Community and Benchmarking
+The documentation includes numerous community benchmark reports, validating performance on diverse hardware configurations. These reports emphasize the importance of precise measurement methodologies, distinguishing between prompt processing speed, decode speed, and time-to-first-token. They also highlight the variability in performance based on specific driver versions, ROCm/CUDA versions, and system configurations (e.g., PCIe lanes, RAM speed).
+
+#### Conclusion
+Strata is a sophisticated inference engine designed to make large MoE models accessible on consumer hardware. Its strength lies in its aggressive optimization of memory hierarchies (VRAM/RAM/Disk) and its support for speculative decoding. The documentation serves as both a user guide and a technical reference, providing detailed tuning parameters for maximizing performance on specific hardware, particularly AMD GPUs where careful configuration of memory reserves and BLAS libraries is essential for optimal results.

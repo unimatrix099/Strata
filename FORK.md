@@ -56,6 +56,11 @@ The engine is `engine/strata`, built from `main` (below). Measured on 08 Oct wit
 | several at once, `"parallel": 8`, total at 1 / 2 / 4 / 8 requests | 71.1 / 89.3 / 133.5 / 179.6 |
 | prompt reading, 4.7K tokens | ~1,100 |
 
+Final config validated (09 Oct, evening; [the folder's "final production config" section](bench/results/2026-10-09-long-context-7900xtx/README.md)):
+prompt reading 1,171 / 2,153 / 2,726 / 3,362 / 3,459 tok/s at 4K / 16K / 32K / 64K / 118K (2-3x the default path),
+the first token at 118K after 35 s; recall, reasoning, long answers, 4 x 64K at once and the conversation cache all
+right; decode unchanged.
+
 Long context (09 Oct, [bench/results/2026-10-09-long-context-7900xtx](bench/results/2026-10-09-long-context-7900xtx/README.md)):
 recall at 8K-127K 12 of 12, reasoning over facts spread through 34K-119K 3 of 3, ~3K-token answers after 122K of
 prompt coherent at 92 tok/s, 9K-16K generated tokens coherent, a 96K-token conversation recalled - no garbage or
