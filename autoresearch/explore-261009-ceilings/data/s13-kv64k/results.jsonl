@@ -1,0 +1,2 @@
+{"test": "longans", "name": "118k", "prompt_n": 118552, "prompt_tps": 3091.2, "ttft_s": 38.5, "decode_n": 1500, "decode_tps": 95.2, "decode_by_quarter": [94.7, 97.3, 89.6, 100.9], "finish": "length", "deg": {"chars": 6513, "words": 979, "comp_min": 0.513, "comp_med": 0.513, "rep8_max": 1, "tail_loop": "", "bad_char_frac": 0.0, "cjk_frac": 0.0, "bad": false, "why": []}, "label": "s13-kv64k", "at": "18:54:04"}
+{"test": "system", "name": "ram", "mem_available_min_gib": 75.3, "label": "s13-kv64k", "at": "18:54:05"}

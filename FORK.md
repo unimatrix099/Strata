@@ -40,11 +40,12 @@ the batch groups without pad rows, the server's pipeline groups and slot choice,
 - `--conversation-cache-mib 16384 --conversation-cache-slots 4` (since 09 Oct): up to four conversations parked in
   RAM, so switching between long ones takes ~1 s instead of re-reading them (~55 s at 64K);
 - `"env": {"STRATA_PIPELINE_DEBUG": "1", "STRATA_PIPELINE_THETA": "0.1", "STRATA_QFUSE": "1", "STRATA_PF_FUSED": "1",
-  "STRATA_HIP_WMMA": "1", "STRATA_PREFILL_CPU_SHARE": "1"}` (the pipeline's gate is read only with the debug switch; `STRATA_PF_FUSED` = upstream's
+  "STRATA_HIP_WMMA": "1", "STRATA_PREFILL_CPU_SHARE": "1", "STRATA_PA_FAST": "1"}` (the pipeline's gate is read only with the debug switch; `STRATA_PF_FUSED` = upstream's
   fused prompt path and `STRATA_HIP_WMMA` = its prompt attention on the matrix cores, both since 09 Oct: prompts read
   ~2-3x faster at 16K-121K, the first token at 118K after 36 s instead of 101-108; both round differently from the
   default path, checked with the long-context suite; `STRATA_PREFILL_CPU_SHARE=1` = the CPU computes a short chunk's
-  non-resident experts: 1K-token reads +13-16%, the first token after 1.7 s instead of 2.0).
+  non-resident experts: 1K-token reads +13-16%, the first token after 1.7 s instead of 2.0; `STRATA_PA_FAST=1` = the
+  prompt attention with single FP16 q and p, +2-3.5% more on long prompts).
 
 The engine is `engine/strata`, built from `main` (below). Measured on 08 Oct with the build of `main`:
 
@@ -152,6 +153,7 @@ card: the launch gaps equal the bandwidth floor), prompt reading at a third of t
 | 09 Oct | `STRATA_PF_FUSED=1` in production after the full quality suite | prompts 1.8-2.3x faster at 16K-121K |
 | 09 Oct | `STRATA_HIP_WMMA=1` in production after a quality check | +20% more on prompts; 118K read at 3,368 tok/s |
 | 09 Oct | `STRATA_PREFILL_CPU_SHARE=1` in production after a short-prompt check | 1K reads +13-16% (agent turns) |
+| 09 Oct | `STRATA_PA_FAST=1` in production after a check; a 64K resident KV measured (nothing) | long prompts +2-3.5% |
 
 ## Bringing in upstream's changes
 

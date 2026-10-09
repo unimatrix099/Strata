@@ -11,6 +11,7 @@ decode 97-108 tok/s (17 ms per window, 1.85 tokens per window), prompt reading 1
 | `STRATA_PF_FUSED=1` (upstream's fused expert kernels on the prompt path) | 32K 1,438 -> 2,057 tok/s; 118K 1,119 -> 2,787 | every prompt from 1,024 tokens |
 | `STRATA_HIP_WMMA=1` (the prompt attention on the matrix cores) | 16K 1,685 -> 2,025; 32K -> 2,654-2,726; 118K -> 3,368 | long prompts (attention's share 24% -> 6-10%) |
 | `STRATA_PREFILL_CPU_SHARE=1` (the CPU computes a short chunk's non-resident experts instead of streaming them) | 1K 500-538 -> 583-611; 2K 845-852 -> 864-910 | agent turns (reads under ~3K tokens) |
+| `STRATA_PA_FAST=1` (the prompt attention with single FP16 q and p) | 16K 2,025 -> 2,097; 118K 3,368 -> 3,434 | long prompts, +2-3.5% (step 13's check: needles 6/6 at 32K/128K, the facts at 118K, a 2K-token answer after 118K coherent) |
 
 In all: a 1K prompt's first token 2.0 -> 1.7 s, 32K 21-27 -> ~12 s, 118K 101-108 -> 36 s; decode unchanged
 (the loop found no cheap decode lever: see section 6). None of the three is bit-identical with the default path; the
@@ -18,7 +19,8 @@ quality suite (section 7 of the long-context README) passed with the first, a sh
 Tried and dropped: device-planned layers under the pipeline, the idle card's prompt helper (never engages here),
 `STRATA_HC_Q8` (inert on this GGUF), `STRATA_PF_GEMM`, `STRATA_PF_PAD`, `STRATA_HC_UPMIX`, `STRATA_SELECT_WMMA`,
 `STRATA_PREFILL_STREAM_MIN=128`, 16K chunks (-13%), a smaller reserve on the desktop card, a later layer split (prompts
-+5.6%, decode -1-7%). `STRATA_PA_FAST=1` (+3-4% on top, another rounding change) waits for its quality check.
++5.6%, decode -1-7%). Decode at 118K with the attention cache resident to 64K instead of 32K (`--kv-resident 65536`, step 13): 95.2 against
+95.0 tok/s on a 1,500-token answer - nothing (the earlier 73-78 at 121K was a 110-145-token answer's pipeline start).
 
 ## 1. The hardware ceilings (measured, `gpu_bw.cpp`, `cpu_bw.cpp`, `gemm_tflops.cpp`)
 
