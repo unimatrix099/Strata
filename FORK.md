@@ -63,8 +63,8 @@ parked conversation).
 
 `Dockerfile.rocm` + `docker-compose.rocm.yml` + one `.env` file (`docker/rocm.env.example`) run the production setup in
 a container, with the tuned settings as env vars: [docs/DOCKER_ROCM.md](docs/DOCKER_ROCM.md). Written 09 Oct, not yet
-built or run (to be tested on the PC). Its ROCm: setup.py's pinned ROCm 7 by default; ROCm 10.1 was measured here and
-is not recommended (GPU memory faults with the conversation cache, no speed gain).
+built or run (to be tested on the PC). Its ROCm: setup.py's pinned ROCm 7 by default. Measured here against ROCm 7.9: 10.1 not
+recommended (GPU memory faults with the conversation cache, no speed gain), 7.14.1 stable but prompts ~40% slower.
 
 ## What was tested (summary, 09 Oct)
 

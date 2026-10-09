@@ -17,7 +17,9 @@ ROCM_IMAGE=rocm/dev-ubuntu-24.04:<tag>`, or `ROCM_IMAGE` in `.env` with the comp
 **ROCm 10.1 is not recommended on this PC** (measured 09 Oct, bench/results/2026-10-09-long-context-7900xtx): the
 engine builds and runs with it, the answers and prompt reading are the same as with ROCm 7.9 and decode is ~3.5% slower
 per window - but two full long-context runs with the conversation cache on each ended in a GPU memory fault right after
-the cache parked a conversation (the engine restarted, one request failed); ROCm 7.9 ran the same twice with none. A
+the cache parked a conversation (the engine restarted, one request failed); ROCm 7.9 ran the same twice with none. **ROCm 7.14.1** (`rocm/dev-ubuntu-24.04:7.14.1-full`) ran
+two full suites with the conversation cache without a fault, but read prompts ~40% slower (~735 against ~1,140 tok/s;
+~650-700 against ~1,200 at 118K) and decoded ~3% slower. A
 ROCm upgrade in place also needs `~/.cache/comgr` cleared (the old ROCm's cached kernels break the new one's start).
 
 ## What the image holds

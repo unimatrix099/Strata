@@ -173,7 +173,26 @@ that ran (needles, facts, 96K conversation); one greedy story looped at its end 
 repeated. A first try failed at start for another reason: `~/.cache/comgr` held kernels compiled by ROCm 7.9, which
 ROCm 10.1's runtime reused (`undefined hidden symbol: __amd_streamOpsIncrement`); clearing the cache fixed it.
 
-So: ROCm 10.1 is no faster here and not safe with the conversation cache; production stays on ROCm 7.9, and the
+**ROCm 7.14.1** (`rocm/dev-ubuntu-24.04:7.14.1-full`, the newest 7.x image; hipBLASLt 1.4.1) the same way, against 7.9
+in alternating pairs (`data/rocm/compare-7.9-7.14.1.jsonl`, `full714-cc-1`, `full714-cc-2`):
+
+| | ROCm 7.14.1 | ROCm 7.9 |
+|---|---|---|
+| eight prompts: tok/s / ms per window | 101.9, 101.9 / 17.88, 17.71 | 107.1, 105.0 / 17.21, 17.30 |
+| a 4.6K-token prompt read | 739 / 735 tok/s | 1,138 / 1,134 tok/s |
+| prompt reading at 118K (the suite) | 646 / 696 tok/s, first token after ~180 s | ~1,200 tok/s, ~100 s |
+| full long-context suite with the conversation cache, twice | no fault, every check right | no fault |
+| `smoke.py` | 7 of 7 | 7 of 7 |
+
+Stable, but prompts read ~40% slower (the hipBLASLt table for 1.4.1 was loaded; ROCm 10.1 with the same hipBLASLt read
+at full speed, so the cause is elsewhere in 7.14.1) and decode ~3% slower per window. The greedy 16K story looped at
+its end once in two runs (ROCm 10.1 once, ROCm 7.9 in none of three); the sampled and code generations stayed coherent.
+ROCm 7.14 and 10.1 keep an older copy of the device libraries in `amdgcn/bitcode` and the current one in
+`lib/llvm/amdgcn/bitcode`: run outside AMD's own image layout, HIP must be pointed at the latter
+(`HIP_DEVICE_LIB_PATH`), or its runtime fails at start as above.
+
+So: ROCm 10.1 is no faster here and not safe with the conversation cache, and 7.14.1 is stable but reads prompts ~40%
+slower; production stays on ROCm 7.9, and the
 Docker image defaults to setup.py's pinned ROCm 7 (docs/DOCKER_ROCM.md). (An earlier reading of "+16-19% prompt reading
 at long context" for 10.1 was the conversation cache's run against one without it, not ROCm: like for like they are
 the same.)
