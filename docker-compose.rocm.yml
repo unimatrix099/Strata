@@ -12,6 +12,7 @@ services:
       dockerfile: Dockerfile.rocm
       args:
         HIP_ARCHS: ${HIP_ARCHS:-gfx1100}
+        ROCM_IMAGE: ${ROCM_IMAGE:-ubuntu:24.04}
     image: strata-rocm:latest
     container_name: strata
     env_file: .env

@@ -150,6 +150,34 @@ checkpoints, the draft layer's cache); parking took 0.3-0.8 s (later parks reuse
 GB of them), restoring 0.17-0.20 s. The three conversations held 4.1-5.8 GB; the lowest free RAM was 70.4 GiB against
 74.1 without. A 16 GB budget holds about 6-7 conversations of 64K (3-4 of 128K); the oldest is evicted first.
 
+## ROCm 10.1 against ROCm 7.9 (09 Oct)
+
+ROCm 10.1 (released 2026-10-05; it lists the RX 7900 XTX) has no wheels or apt packages for these cards yet; AMD ships
+it as the Docker image `rocm/dev-ubuntu-24.04:10.1.0-full`. Its ROCm folder was unpacked without Docker
+(`data/rocm/pull_rocm.py`), the engine built against it with setup.py's flags (`build_rocm.py`; hipBLASLt 1.4.1, so the
+`gfx1100-hipblaslt-100401` table applies) and run through `strata-r10.sh` (its libraries first). Driver: amdgpu
+6.19.14 / 31.40 with kernel 6.8 (ROCm 10.1's own `rocminfo` and HIP tests ran). Data in `data/rocm/`.
+
+| | ROCm 10.1 | ROCm 7.9 (installed) |
+|---|---|---|
+| eight prompts, the installed config (two runs each): tok/s / ms per window | 104.8, 108.2 / 17.53, 17.59 | 108.6, 107.7 / 16.92, 17.03 |
+| a 4.6K-token prompt read | 1,146 / 1,145 tok/s | 1,148 / 1,098 tok/s |
+| prompt reading at 118K, the same suite with the conversation cache | 1,211 tok/s | 1,200 tok/s |
+| `smoke.py` | 7 of 7 | 7 of 7 |
+| full long-context suite with the conversation cache, twice | **a GPU memory fault in each run** (the engine restarted; one request failed with 503) | no fault in either |
+| the long-generation tests alone, without the cache | no fault | - |
+
+Both faults came right after the conversation cache parked a conversation (4 parked, 8-10 GB, evictions):
+"Memory access fault by GPU node-1 ... Page not present" at a host address. The answers were right in every test
+that ran (needles, facts, 96K conversation); one greedy story looped at its end on ROCm 10.1 once and not when
+repeated. A first try failed at start for another reason: `~/.cache/comgr` held kernels compiled by ROCm 7.9, which
+ROCm 10.1's runtime reused (`undefined hidden symbol: __amd_streamOpsIncrement`); clearing the cache fixed it.
+
+So: ROCm 10.1 is no faster here and not safe with the conversation cache; production stays on ROCm 7.9, and the
+Docker image defaults to setup.py's pinned ROCm 7 (docs/DOCKER_ROCM.md). (An earlier reading of "+16-19% prompt reading
+at long context" for 10.1 was the conversation cache's run against one without it, not ROCm: like for like they are
+the same.)
+
 ## Not tested
 
 Contexts above 128K (the config's limit), more than 4 long conversations at once, other languages than

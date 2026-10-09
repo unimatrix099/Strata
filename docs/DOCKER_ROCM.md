@@ -8,12 +8,23 @@ is for NVIDIA cards only.
 config, the build step against `setup.py`'s functions) on 09 Oct 2026; **the image has not been built or run yet**
 (no Docker where it was written). The first build and start on the PC are the test - see "Checking it" below.
 
+## Which ROCm
+
+By default the image takes the ROCm `setup.py` pins for the cards (AMD's TheRock wheels; for RX 7900 cards
+7.10.0a20251121, upstream's tested version). `ROCM_IMAGE` builds on an AMD ROCm image instead (`--build-arg
+ROCM_IMAGE=rocm/dev-ubuntu-24.04:<tag>`, or `ROCM_IMAGE` in `.env` with the compose file's build args).
+
+**ROCm 10.1 is not recommended on this PC** (measured 09 Oct, bench/results/2026-10-09-long-context-7900xtx): the
+engine builds and runs with it, the answers and prompt reading are the same as with ROCm 7.9 and decode is ~3.5% slower
+per window - but two full long-context runs with the conversation cache on each ended in a GPU memory fault right after
+the cache parked a conversation (the engine restarted, one request failed); ROCm 7.9 ran the same twice with none. A
+ROCm upgrade in place also needs `~/.cache/comgr` cleared (the old ROCm's cached kernels break the new one's start).
+
 ## What the image holds
 
 - Ubuntu 24.04, the repository, its Python environment.
-- ROCm from AMD's TheRock wheels (~10 GB, in `.venv`) and the engine compiled for `HIP_ARCHS` (default `gfx1100`),
-  both through `setup.py`'s own functions - the same path `setup.py` takes on a Linux PC without a system ROCm. The
-  host needs only the `amdgpu` kernel driver (any recent Linux kernel), no ROCm.
+- ROCm (see above) and the engine compiled for `HIP_ARCHS` (default `gfx1100`), through `setup.py`'s own functions -
+  the same path `setup.py` takes on a Linux PC. The host needs only the `amdgpu` kernel driver, no ROCm.
 - Not the model: models, the prepared pack, the MTP layer and the configs are on the `/data` volume (a host
   folder). An existing `Strata-data` folder is reused as it is.
 

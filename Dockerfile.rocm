@@ -3,18 +3,23 @@
 # Strata on AMD GPUs (ROCm / HIP, Linux): the fork's production setup for 2x RX 7900 XTX (gfx1100), usable for any
 # RDNA2/3/4 card by its architecture. Guide: docs/DOCKER_ROCM.md. Compose: docker-compose.rocm.yml.
 #
-# The engine is compiled during docker build exactly the way setup.py compiles it on a Linux PC without a system ROCm:
-# ROCm comes from AMD's TheRock wheels into .venv (~10 GB), the engine is built for HIP_ARCHS. docker build has no
-# GPU, so the architectures are given here (gfx1100 = RX 7900 XT/XTX/GRE; gfx1101/1102 = RX 7600-7800; gfx1200/1201 =
-# RX 9060/9070; gfx1030 = RX 6800/6900; several with ';').
+# Base (ROCM_IMAGE): plain Ubuntu 24.04 by default - setup.py then installs the ROCm it pins for the cards' family from
+# AMD's TheRock wheels into .venv (~10 GB; for RX 7900: 7.10.0a20251121, upstream's tested version). With an AMD ROCm
+# development image instead, setup.py builds against its /opt/rocm. ROCm 10.1 (rocm/dev-ubuntu-24.04:10.1.0-full) was
+# measured on this PC on 09 Oct and is NOT the default: two GPU memory faults in two full long-context runs with the
+# conversation cache on (none with ROCm 7.9), and no speed gain (bench/results/2026-10-09-long-context-7900xtx).
+# docker build has no GPU, so the architectures are given here (HIP_ARCHS: gfx1100 = RX 7900 XT/XTX/GRE;
+# gfx1101/1102 = RX 7600-7800; gfx1200/1201 = RX 9060/9070; gfx1030 = RX 6800/6900; several with ';').
 #
 # Build:   docker build -f Dockerfile.rocm -t strata-rocm .
+#          docker build -f Dockerfile.rocm --build-arg ROCM_IMAGE=rocm/dev-ubuntu-24.04:7.14.1-full -t strata-rocm .
 # Run:     docker compose -f docker-compose.rocm.yml up -d      (the env vars: docker/rocm.env.example)
 #
-# Only the model files, the prepared pack, the MTP layer and the install config live in the /data volume; the
-# engine and ROCm are part of the image.
+# The host needs the amdgpu kernel driver. Only the model files, the prepared pack, the MTP layer and the install config
+# live in the /data volume; the engine and ROCm are part of the image.
 
-FROM ubuntu:24.04
+ARG ROCM_IMAGE=ubuntu:24.04
+FROM ${ROCM_IMAGE}
 
 # STRATA_EXECV=1: setup.py replaces itself with the server, so the server is PID 1 and docker stop's SIGTERM reaches it
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 LANG=C.UTF-8 STRATA_EXECV=1
@@ -36,8 +41,9 @@ RUN python3 -m venv .venv \
     && .venv/bin/pip install --no-cache-dir -r requirements.txt \
     && chmod +x setup.sh docker/rocm-entrypoint.sh
 
-# llama.cpp at the pinned commit, ROCm (TheRock wheels for the cards' family) and the HIP engine, through setup.py's
-# own functions; BUILD.json (written by build_engine_hip) is what setup.py reads to reuse the engine at start.
+# llama.cpp at the pinned commit and the HIP engine, through setup.py's own functions (it finds the image's ROCm in
+# /opt/rocm; without one it would install AMD's TheRock wheels into .venv); BUILD.json (written by build_engine_hip) is
+# what setup.py reads to reuse the engine at start.
 # Native code for the CPU that builds the image: build it on the PC it runs on.
 RUN .venv/bin/python - <<'PYEOF'
 import os
