@@ -1,0 +1,20 @@
+strata serve: conversation cache: parked 64817 tokens in 778.9 ms; parked=1 bytes=1583401176 evictions=0 snapshot_bytes=1583401176 reused_kv_bytes=0
+strata serve: conversation cache: parked 63219 tokens in 769.6 ms; parked=2 bytes=3142354400 evictions=0 snapshot_bytes=1558953224 reused_kv_bytes=0
+strata serve: conversation cache: parked 66859 tokens in 842.7 ms; parked=2 bytes=3292482744 evictions=0 snapshot_bytes=1733529520 reused_kv_bytes=0
+strata serve: conversation cache: restored 64817 tokens (live) in 200.0 ms; parked=2 bytes=4281900256
+strata serve: conversation cache: parked 64856 tokens in 323.9 ms; parked=2 bytes=4125148392 evictions=0 snapshot_bytes=2391618872 reused_kv_bytes=989351424
+strata serve: conversation cache: restored 63219 tokens (live) in 165.4 ms; parked=2 bytes=5090143504
+strata serve: conversation cache: parked 63256 tokens in 322.3 ms; parked=2 bytes=4752530584 evictions=0 snapshot_bytes=2360911712 reused_kv_bytes=964929024
+strata serve: conversation cache: restored 66859 tokens (live) in 168.3 ms; parked=2 bytes=5773087280
+strata serve: conversation cache: parked 66896 tokens in 373.5 ms; parked=2 bytes=4505614624 evictions=0 snapshot_bytes=2144702912 reused_kv_bytes=1020489984
+strata serve: conversation cache: restored 64856 tokens (live) in 173.5 ms; parked=2 bytes=6184298568
+strata serve: conversation cache: parked 64894 tokens in 371.8 ms; parked=2 bytes=4655273352 evictions=0 snapshot_bytes=2510570440 reused_kv_bytes=989957760
+strata serve: conversation cache: restored 63256 tokens (live) in 172.1 ms; parked=2 bytes=6303288496
+strata serve: conversation cache: parked 63292 tokens in 372.6 ms; parked=2 bytes=4990420888 evictions=0 snapshot_bytes=2479850448 reused_kv_bytes=965535360
+strata serve: conversation cache: restored 66896 tokens (live) in 174.8 ms; parked=2 bytes=6303183408
+strata serve: conversation cache: parked 66930 tokens in 370.9 ms; parked=2 bytes=4624826848 evictions=0 snapshot_bytes=2144976400 reused_kv_bytes=1021096320
+strata serve: conversation cache: restored 64894 tokens (live) in 186.9 ms; parked=2 bytes=6303510792
+strata serve: conversation cache: parked 64930 tokens in 369.6 ms; parked=2 bytes=4655804328 evictions=0 snapshot_bytes=2510827928 reused_kv_bytes=990511488
+strata serve: conversation cache: restored 63292 tokens (live) in 201.6 ms; parked=2 bytes=6303819472
+strata serve: conversation cache: parked 63327 tokens in 370.4 ms; parked=2 bytes=4990923048 evictions=0 snapshot_bytes=2480095120 reused_kv_bytes=966084864
+strata serve: conversation cache: restored 66930 tokens (live) in 175.4 ms; parked=2 bytes=6303685568

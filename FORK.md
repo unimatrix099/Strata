@@ -53,7 +53,9 @@ Long context (09 Oct, [bench/results/2026-10-09-long-context-7900xtx](bench/resu
 recall at 8K-127K 12 of 12, reasoning over facts spread through 34K-119K 3 of 3, ~3K-token answers after 122K of
 prompt coherent at 92 tok/s, 9K-16K generated tokens coherent, a 96K-token conversation recalled - no garbage or
 drift up to the 128K limit; prompt reading ~1,100-1,200 tok/s, first token after 108 s at 121K. Several 64K conversations at once (`"parallel"` 2 and 4): every conversation right and kept apart, but slower in
-all than one at a time (16.7 tok/s in all for 4).
+all than one at a time (16.7 tok/s in all for 4). Switching between three 64K conversations: 50-58 s per follow-up without upstream's conversation cache,
+0.7-1.3 s with `--conversation-cache-mib 16384 --conversation-cache-slots 4` (the same answers; 1.5-2.4 GB of RAM per
+parked conversation).
 
 ## History
 

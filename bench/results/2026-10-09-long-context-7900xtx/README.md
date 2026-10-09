@@ -133,6 +133,23 @@ this PC; it pays with short contexts (agents: 180 tok/s in all at 8). For people
 conversations, the conversation cache (`--conversation-cache-mib`, docs/DETAILS.md) is the thing to try - not
 measured here.
 
+## Switching between long conversations: the conversation cache (`--conversation-cache-mib`)
+
+`longctx.py --tests convcache`: three conversations of ~64K (four notes each), then three rounds of follow-up
+questions alternating between them (A, B, C, A, ...) - the single prompt cache's worst case. Without the cache, then
+with `--conversation-cache-mib 16384 --conversation-cache-slots 4` added to the engine's arguments (upstream's,
+off by default). Data in `data/cc-off`, `data/cc-on` (with the engine's park / restore lines).
+
+| | follow-up re-reads | first token after a switch | answers right |
+|---|---|---|---|
+| without | the whole conversation, 63-67K tokens | 50.3-58.3 s | 9 of 9 |
+| with the conversation cache | 31-33 tokens (the new question) | 0.73-1.29 s | 9 of 9, the same answers |
+
+A parked 64K conversation is a 1.5-2.4 GB snapshot in RAM (the attention cache, the recurrent state, the
+checkpoints, the draft layer's cache); parking took 0.3-0.8 s (later parks reuse the unchanged K/V pages: 0.96-1.02
+GB of them), restoring 0.17-0.20 s. The three conversations held 4.1-5.8 GB; the lowest free RAM was 70.4 GiB against
+74.1 without. A 16 GB budget holds about 6-7 conversations of 64K (3-4 of 128K); the oldest is evicted first.
+
 ## Not tested
 
 Contexts above 128K (the config's limit), more than 4 long conversations at once, other languages than

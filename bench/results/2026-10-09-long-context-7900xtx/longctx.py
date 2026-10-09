@@ -97,10 +97,18 @@ class GttWatch(threading.Thread):
         except OSError:
             return 0
 
+    mem_min = None   # the lowest MemAvailable seen (GiB)
+
     def run(self):
         while not self.stop:
             for i, f in enumerate(self.files):
                 self.peak[i] = max(self.peak[i], self.read(f))
+            try:
+                kb = int(next(l for l in open("/proc/meminfo") if l.startswith("MemAvailable")).split()[1])
+                gib = round(kb / 2**20, 1)
+                self.mem_min = gib if self.mem_min is None else min(self.mem_min, gib)
+            except (OSError, StopIteration, ValueError):
+                pass
             time.sleep(2)
 
 
@@ -421,6 +429,53 @@ def _par(self):
 Suite.par = _par
 
 
+def _convcache(self):
+    """K long conversations, then rounds of follow-ups alternating between them (the single prompt cache's worst case):
+    tokens re-read, time to the first token and the answer of each follow-up. Run it with and without
+    --conversation-cache-mib to compare; the follow-ups' text is kept to compare the two runs token for token."""
+    K, tok, R = self.a.cc_n, kt(self.a.cc_size), self.a.cc_rounds
+    convs = []
+    for i in range(K):
+        rnd = random.Random(500 + i)
+        text = f"Conversation {i}, session {rnd.randint(10**8, 10**9)}.\n" + text_of(tok, offset=150000 * i + rnd.randint(0, 40000))
+        f = {"ALPHA": str(rnd.randint(1000, 4999)), "DELTA": str(rnd.randint(100, 999)),
+             "GAMMA": ["Teodora Vlasic", "Ilinca Moraru", "Bogdan Serban", "Mirela Toma"][i % 4],
+             "EPSILON": rnd.choice(["violet", "saffron", "indigo", "crimson", "amber"])}
+        notes = [(0.15, f"Note for the auditors: the access code of vault ALPHA is {f['ALPHA']}."),
+                 (0.4, f"Note for the auditors: the shelf number of vault DELTA is {f['DELTA']}."),
+                 (0.65, f"Note for the auditors: the courier assigned to vault GAMMA is {f['GAMMA']}."),
+                 (0.9, f"Note for the auditors: the colour of vault EPSILON's door is {f['EPSILON']}.")]
+        for depth, line in reversed(notes):
+            cut = text.rfind("\n", 0, int(len(text) * depth)) + 1
+            text = text[:cut] + "\n" + line + "\n" + text[cut:]
+        msgs = [{"role": "user", "content": text + "\n\nRead the text above. Reply with one short sentence saying what it is about."}]
+        r = chat(msgs, 80)
+        msgs.append({"role": "assistant", "content": r["content"]})
+        t = r["timings"]
+        self.keep({"test": "convcache", "name": f"c{i}-open", "conv": i, "prompt_n": t.get("prompt_n"),
+                   "ttft_s": round((t.get("prompt_ms") or 0) / 1000, 1), "answer": r["content"][:100]})
+        convs.append((msgs, f))
+    qs = [("GAMMA", "Who is the courier assigned to vault GAMMA in the notes above? Reply with the name only."),
+          ("DELTA", "What is the shelf number of vault DELTA in the notes above? Reply with the number only."),
+          ("ALPHA", "What is the access code of vault ALPHA in the notes above? Reply with the number only."),
+          ("EPSILON", "What colour is vault EPSILON's door in the notes above? Reply with the colour only.")]
+    for rr in range(R):
+        for i, (msgs, f) in enumerate(convs):
+            key, q = qs[(rr + i) % len(qs)]
+            msgs.append({"role": "user", "content": q})
+            r = chat(msgs, 30)
+            msgs.append({"role": "assistant", "content": r["content"]})
+            t = r["timings"]
+            want = f[key].split()[0]
+            self.keep({"test": "convcache", "name": f"r{rr}-c{i}-{key}", "conv": i, "round": rr,
+                       "total_tokens": r["usage"].get("prompt_tokens"), "prompt_n": t.get("prompt_n"),
+                       "ttft_s": round((t.get("prompt_ms") or 0) / 1000, 2), "wall_s": round(r["wall"], 2),
+                       "ok": want.lower() in r["content"].lower(), "want": want, "answer": r["content"][:60]})
+
+
+Suite.convcache = _convcache
+
+
 def report(out, label, rows, gtt, errors, log_tail):
     L = [f"# Long-context suite: {label} ({time.strftime('%Y-%m-%d %H:%M')})", ""]
     L.append(f"GTT peak per card (MiB, before -> peak): " +
@@ -437,7 +492,8 @@ def report(out, label, rows, gtt, errors, log_tail):
                        ("turns", ["name", "total_tokens", "prompt_n", "ttft_s", "ok", "found"]),
                        ("par", ["name", "prompt_n", "start_s", "ttft_s", "end_s", "decode_n", "decode_tps", "want",
                                 "ok_code", "ok_name", "turn2_ok", "turn2_read", "crosstalk", "ok", "decode_tps_total",
-                                "all_ok"])]:
+                                "all_ok"]),
+                       ("convcache", ["name", "total_tokens", "prompt_n", "ttft_s", "wall_s", "ok", "want", "answer"])]:
         rs = [r for r in rows if r["test"] == test]
         if not rs:
             continue
@@ -462,6 +518,9 @@ def main():
     ap.add_argument("--par-n", type=int, default=4, help="par: conversations at once")
     ap.add_argument("--par-size", default="64k", help="par: each conversation's prompt")
     ap.add_argument("--par-tokens", type=int, default=2500)
+    ap.add_argument("--cc-n", type=int, default=3, help="convcache: conversations")
+    ap.add_argument("--cc-size", default="64k", help="convcache: each conversation's first prompt")
+    ap.add_argument("--cc-rounds", type=int, default=3, help="convcache: rounds of follow-ups over all conversations")
     ap.add_argument("--tests", default="speed,needles,facts,longans,longgen,turns")
     ap.add_argument("--speed-sizes", default="4k,16k,32k,64k,118k")
     ap.add_argument("--needle-sizes", default="8k,32k,64k,128k")
@@ -489,6 +548,7 @@ def main():
         gw.stop = True
     lines = open(log, errors="replace").read().splitlines()
     errors = [l for l in lines if re.search(r"\bERR\b|error:|\bfault\b|\bfailed\b|timed out", l, re.I) and "no error" not in l]
+    s.keep({"test": "system", "name": "ram", "mem_available_min_gib": gw.mem_min})
     report(out, a.label, s.rows, list(zip(gw.base, gw.peak)), len(errors), (errors[-10:] or lines[-12:]))
     print(f"report: {os.path.join(out, 'report.md')}")
 
