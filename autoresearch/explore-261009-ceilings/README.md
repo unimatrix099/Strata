@@ -140,3 +140,25 @@ Prompt reading (1,400 tok/s; the practical ceiling 4,200):
 `gpu_bw.cpp`, `cpu_bw.cpp`, `gemm_tflops.cpp` (the micro-benchmarks and their outputs `*.txt`), `roofline.txt` (the
 cost model), `data/decode-profile.txt` (the per-stage decode profile), `data/pf-*/` (each prompt variant's timing, speed
 and answer), `data/results.jsonl` (the helper test), `pfvar.sh` / `vprof.sh` (how they ran).
+
+## Tests still to run (the long ones, later)
+
+The loop now uses short tests (16K prompts, 256-token decodes, one run each) to find candidates; before any of them
+goes into the production config it needs the long checks:
+
+- the full long-context quality suite (`longctx.py`, ~25 min) with the candidate on - needles 8K-128K, facts, the
+  ~3K-token answers after 32K-122K, 16K generations, the 96K conversation, and a read of any flagged answer;
+- the exact-protocol runs (`STRATA_IQ_MT_MIN=1 --pcie-frac 0 --adapt-every 0`, story + code x2, ~6 min) to say whether
+  it is bit-identical to the default path - `STRATA_PF_GEMM`, `--prefill 16384` and `STRATA_HC_Q8` have not had it;
+- the eight-prompt decode speed pairs (`bench_many.py`, alternating with the production engine, 3 pairs, ~30 min) for
+  any decode change claiming under 5%;
+- several conversations at once (`"parallel"` 4 at 64K) and the conversation cache switches, for a change on the
+  prompt path (the prompt path runs while slots decode);
+- `smoke.py` (7 checks) and `tools/batch_test.py` after any engine rebuild.
+
+Done at full length so far: `STRATA_PF_FUSED=1` - the long-context suite (section 7).
+
+To try on the host (not possible from the sandbox, no root): `rocm-smi --setperflevel high` on both cards before a
+decode bench. On 05 Oct the waiting card's shader clock was seen dropping to ~1.5 GHz in the gaps between kernels and
+staying at ~2.95 GHz only while a queued graph spun; a forced level would remove that effect, if the driver allows it
+for RDNA3. Measure the eight-prompt decode speed with and without, and the power draw.

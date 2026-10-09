@@ -1,0 +1,11 @@
+=== reasoning ===
+We need answer user's request. User provided long docs with three notes for auditors:
+1. "Note for the auditors: the access code of vault ALPHA is 2399."
+2. "Note for the auditors: the access code of vault BETA is the code of vault ALPHA plus 2232."
+3. "Note for the auditors: the courier assigned to vault GAMMA is Mirela Toma."
+Question: Using them: (1) what is access code of vault BETA? (2) who is courier assigned to vault GAMMA? Answer briefly.
+Need compute BETA = ALPHA 2399 + 2232 = 4631. GAMMA courier Mirela Toma. Need likely mention concise. Ensure no hidden issue: There are three notes? Yes. Need answer briefly.
+
+=== answer ===
+1. Vault BETA access code: **4631**  
+2. Courier assigned to vault GAMMA: **Mirela Toma**

@@ -244,6 +244,25 @@ Docker image defaults to setup.py's pinned ROCm 7 (docs/DOCKER_ROCM.md). (An ear
 at long context" for 10.1 was the conversation cache's run against one without it, not ROCm: like for like they are
 the same.)
 
+## The fused prompt path in production (`STRATA_PF_FUSED=1`, 09 Oct)
+
+Upstream's fused expert kernels for the prompt path (the experts on the matrix cores, no dequantize pass, the row
+grouping on the GPU; opt-in upstream because it rounds differently from the default path). The same suite as above
+with it on (`data/fused-quality/`): needles 12 of 12, facts 3 of 3, the ~3K-token reports after 32K-122K coherent to
+the end, the 16K generations coherent (one greedy story with its refrain repeated 17 times, as the default path's
+stories do), the 96K conversation recalled, no engine error, no GTT spill. Prompt reading:
+
+| prompt | default path | fused path | first token after (default -> fused) |
+|---|---|---|---|
+| 4K | 911-915 tok/s | 1,046 | 4.6 -> 4.0 s |
+| 15K | 1,100-1,304 | 1,799 | 11.7-13.7 -> 8.5 s |
+| 30K | 1,097-1,177 | 2,240 | 25.5-27.2 -> 13.4 s |
+| 62K | 1,202-1,205 | 2,695 | 51.4-51.6 -> 23.0 s |
+| 121K | 1,119-1,200 | 2,787 | 101-108 -> 43.6 s |
+
+Decode is unchanged (91-101 tok/s in the same runs). The production config carries `"STRATA_PF_FUSED": "1"` since
+09 Oct; its answers can differ in wording from the default path's (both correct in every check here).
+
 ## Not tested
 
 Contexts above 128K (the config's limit), more than 4 long conversations at once, other languages than
