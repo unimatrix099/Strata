@@ -3762,20 +3762,23 @@ __global__ void __launch_bounds__(256) STRATA_POST_VGPR expert_post_persistent(N
 }
 }  // namespace
 
-bool native_expert_post_persistent(const NativeExpertPostArgs& args, const NativeExpertLayout& L, void* stream) {
+bool native_expert_post_supported(const NativeExpertLayout& L) {
     // the kernel bodies the grouped launcher would pick (native_expert_grouped's default path), else the caller keeps
     // the kernels: the AMD layouts, V1, the old / no-SUB16 kernels and the S26/S27 paths are not covered
-    if (args.blocks <= 0 || g_old_kernels || g_no_sub16_gu || g_grouped_v1 || g_exp_phase != 0 || L.n_ff != 640 ||
-        L.n_embd != 2560 || args.k != 10)
+    if (g_old_kernels || g_no_sub16_gu || g_grouped_v1 || g_exp_phase != 0 || L.n_ff != 640 || L.n_embd != 2560)
         return false;
 #if STRATA_EXP_LAYOUTS
     if (exp_mode() != 0) return false;
 #endif
-    {
-        static const bool v2 = [] { const char* v = std::getenv("STRATA_EXPERT_V2"); return v && v[0] == '1'; }();
-        static const bool v2k = [] { const char* v = std::getenv("STRATA_EXPERT_V2K"); return v && v[0] == '1'; }();
-        if (v2 || v2k) return false;
-    }
+    static const bool v2 = [] { const char* v = std::getenv("STRATA_EXPERT_V2"); return v && v[0] == '1'; }();
+    static const bool v2k = [] { const char* v = std::getenv("STRATA_EXPERT_V2K"); return v && v[0] == '1'; }();
+    if (v2 || v2k) return false;
+    const bool gu = L.gu_type == 16 || L.gu_type == 17 || L.gu_type == 18 || L.gu_type == 21 || L.gu_type == 22;
+    return gu && (L.d_type == 20 || L.d_type == 42);
+}
+
+bool native_expert_post_persistent(const NativeExpertPostArgs& args, const NativeExpertLayout& L, void* stream) {
+    if (args.blocks <= 0 || args.k != 10 || !native_expert_post_supported(L)) return false;
     NativeExpertPostArgs a = args;
     a.gu_gx = (int) ((2 * L.n_ff + 15) / 16);                     // gu_rows 16 (the SUB16 path; the types below)
     a.sw_gx = (int) (((long long) a.cap * L.n_ff + 255) / 256);   // the launcher's SwiGLU grid
@@ -3806,6 +3809,7 @@ int native_expert_post_max_blocks() {
     return per_cu * prop.multiProcessorCount;
 }
 #else   // CUDA keeps the kernels (the persistent FFN half is HIP only)
+bool native_expert_post_supported(const NativeExpertLayout&) { return false; }
 bool native_expert_post_persistent(const NativeExpertPostArgs&, const NativeExpertLayout&, void*) { return false; }
 int native_expert_post_max_blocks() { return 0; }
 #endif

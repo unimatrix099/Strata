@@ -20,6 +20,7 @@ Every number here was measured on that PC. The full record, with every try and t
 | setup: on several cards the `"parallel"` note gives the measured trade-off | `bc94d9d` | - |
 | HIP: the PCIe share's copy kernel launched with 96 blocks instead of 384 (a 384 x 256 launch - 48 CUs x 8 - costs 14-16 us on gfx1100 even when there is nothing to copy, which is nearly always; bit-exact, CUDA unchanged) | (this commit) | +3-5% decode (exact text), +6% over eight prompts |
 | `STRATA_HIP_POST_SPLIT=1` (HIP, opt-in; on in the production config): each layer's post() - wait A and the plan's copy, then wait B, the PCIe share, wait C and the combine - as two persistent launches around the three expert kernels (12 kernels -> 5 per layer; bit-exact: the same kernel bodies run as virtual blocks) | (this commit) | +2-4% decode (exact text), +3.5% over eight prompts |
+| `STRATA_HIP_FRONT_FUSE=1` (opt-in; on in the production config; needs the split): the front of each layer's FFN half fused - the top-10 and the doorbell in one launch, the shared expert on QFUSE's q8_1 bytes (no own quantize) and without its gate, which one launch then applies together with post()'s head (15 kernels -> 11 per layer; bit-exact) | (this commit) | +2.5% decode (exact text), +2.7% over eight prompts (six rounds) |
 | `STRATA_MTP_TOP2=1`: a diagnostic, how often the drafter's second choice is the token a pipelined window missed (off by default) | `1ad25e4` | - |
 
 Kept in the fork's docs: [docs/RESEARCH_2X_7900XTX.md](docs/RESEARCH_2X_7900XTX.md) (the history), the desktop-card
@@ -167,6 +168,7 @@ card: the launch gaps equal the bandwidth floor), prompt reading at a third of t
 | 09 Oct | `--ple-io ram` in production (the PLE table in RAM; exact) | 4K prompts +22-29%, 32K +9-10% |
 | 10 Oct | option B (a persistent layer kernel) investigated; a kernel trace found the PCIe copy kernel's 384-block launch costing 12-15 us in every layer for nothing: 96 blocks on HIP | decode +6% (eight prompts, 19 of 24 faster), same text |
 | 10 Oct | option B step 1: a persistent post() built (the kernel bodies as virtual blocks, bit-exact); the experts run slower inside it (42 against 20 us), so the head and tail are persistent and the experts stay kernels: `STRATA_HIP_POST_SPLIT=1` | decode +3.5% (eight prompts, 16 of 24 faster), same text; smoke 7/7 |
+| 10 Oct | option B step 2: the FFN half's front fused (`STRATA_HIP_FRONT_FUSE=1`) | decode +2.7% (six rounds, 31 of 48 faster), same text; smoke 7/7 |
 
 ## Bringing in upstream's changes
 

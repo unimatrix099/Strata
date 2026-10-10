@@ -299,6 +299,41 @@ previous ones). Next: the front of the half (router GEMV, top-10, doorbell, the 
 head - those bodies live in four other files (native_bf16.cu, native_router.cu, elementwise.cu, native_mmvq.cu /
 shared_expert.cu) and the shared expert's GEMVs are 128-thread blocks, two per persistent block.
 
+## 11. Step 3: the front of the FFN half fused (10 Oct)
+
+The lesson of step 2 (the big kernels are best left as kernels) applied to the front: only the small kernels between
+the projections are merged.
+- `native_route_doorbell` (native_router.cu): the top-10 (`route_multi`'s row code, now `route_row()`, which the kernel
+  also calls) and then the doorbell (doorbell_publish_kernel's copies, fences and ring) in one block.
+- The shared expert's own q8_1 of its input is dropped: QFUSE already wrote the same bytes into the experts' buffer
+  (the existing `STRATA_VERIFY_QDEDUP` idea), and its gate is deferred (the existing LFUSE bit 0).
+- `native_gate_scale_head` (native_bf16.cu): the shared expert's gate GEMV (the `bf16_f32_mmvf(_multi)` kernel bodies,
+  now VBlock bodies), its sigmoid scale (`sigmoid_scale_body.cuh`, shared with the kernel) and post()'s head (wait A,
+  the plan's copy) in one block.
+- verify.cpp: `STRATA_HIP_FRONT_FUSE=1`, only where the split post() runs for that layer (one predicate,
+  `post_split_ok`), since the gate is left to the split's head; the engine refuses a window where that would not hold.
+
+Harness (`ffn_half_bench`, now also 1-row windows, the most common in production; card 1, 8 layers):
+
+| per layer | 1 row | 2 rows | 3 rows |
+|---|---|---|---|
+| the chain (23 kernels) | 120.9 us | 150.1 | 180.7 |
+| the split post() (15) | 103.6 | 131.8 | 164.9 |
+| **+ the fused front (11)** | **96.8** | **126.9** | **161.7** |
+
+Bitwise the chain's output at 1, 2 and 3 rows (0 of 61,440 / 122,880 / 184,320 values over three runs each).
+
+Engine, against the production engine with the split: exact protocol the same text (928818aa87 / 449d3d4c28), story
+94.4 -> 96.7, code 117.3 -> 120.3 tok/s (+2.5%); eight prompts, six alternating rounds (the last three with the new
+engine first): 0.979, 0.997, 1.047, 1.047, 1.044, 1.050 - mean 1.027, 31 of 48 prompts faster, 116.6 -> 119.4 tok/s.
+Server smoke 7 of 7. In production since 10 Oct (`*.before-frontfuse` are the previous engine and config).
+
+Where option B stands: decode ~106 tok/s this morning -> ~119 (fetch fix +6%, split +3.5%, front +2.7%), every step
+bit-exact. Per layer the FFN half is 23 -> 11 kernels. What is left of the FFN half is the projections themselves
+(router GEMV, shared gate / up / down, the experts' gate/up / down) and the one SwiGLU between up and down; merging
+those measured slower (step 2). The attention half (GDN mixer 6 kernels, QSA 22, the hyper-connection reads 3 + 3)
+has the same structure: projections with small kernels between them.
+
 ## Files
 
 `launch_gap.cpp`, `phase_bw.cpp`, `any_order.cpp`, `any_order_graph.cpp`, `fork_cost.cpp` and their `*-dev1.txt`

@@ -109,6 +109,10 @@ inline bool g_mmvq_il() { static const bool on = [] { const char* v = std::geten
 // three kernels - the head (wait A, the plan's copy) and the tail (wait B, the PCIe share, wait C, the combine) -
 // bit for bit the kernels' values (iq_kernels.hpp native_expert_post_persistent; ffn_half_bench measures it)
 inline bool g_post_split() { static const bool on = [] { const char* v = std::getenv("STRATA_HIP_POST_SPLIT"); return v != nullptr && std::atoi(v) != 0; }(); return on; }
+// STRATA_HIP_FRONT_FUSE=1 (with STRATA_HIP_POST_SPLIT=1): the FFN half's front fused as well - the top-10 and the doorbell in
+// one launch (native_route_doorbell), the shared expert on the QFUSE q8_1 bytes and without its gate, which post()'s
+// head then applies (native_gate_scale_head: the gate GEMV, the sigmoid scale, wait A and the plan) - bit for bit
+inline bool g_front_fuse() { static const bool on = [] { const char* v = std::getenv("STRATA_HIP_FRONT_FUSE"); return v != nullptr && std::atoi(v) != 0; }(); return on; }
 inline bool g_qfuse() { static const bool on = [] { const char* v = std::getenv("STRATA_QFUSE"); return v != nullptr && std::atoi(v) != 0; }(); return on; }
 #define VDBG(...) do { if (g_dbg) { std::fprintf(stderr, "verify dbg: " __VA_ARGS__); std::fflush(stderr); } } while (0)
 
@@ -746,6 +750,18 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                shared_expert_native_bf16_enabled();
     };
     bool sg_gated_[2] = {false, false};   // per group: the combine applies the shared gate
+    bool front_fused_[2] = {false, false};   // per group: STRATA_HIP_FRONT_FUSE ran the front (post()'s head applies the gate)
+    // STRATA_HIP_POST_SPLIT's conditions for layer l (the doorbell path with the gathered combine, a covered layer); the
+    // front fuse needs them too, since it leaves the shared expert's gate to the split's head
+    static const bool gather_env_all = [] { const char* v = std::getenv("STRATA_COMBINE_GATHER"); return v == nullptr || std::atoi(v) != 0; }();
+    auto post_split_ok = [&](int64_t l) -> bool {
+        const auto& lay0 = strata::kernels::cpu::expert_layout();
+        if (ar_on() || post_bar_ == nullptr || !gather_env_all || all_resident_ || device_plan_ || remote_opt_ || prof_on_ ||
+            !dec_batch || !native_moe_combine_enabled() || !lay0.native || sink_.pcie_mode != 2)
+            return false;
+        const auto& f = lay0.fmt[(size_t) l];
+        return strata::kernels::native_expert_post_supported(native_expert_layout(f.gu_type, f.d_type, f.n_embd, f.n_ff));
+    };
     if (!batch_rec_) groups_[T] = G;
     // Programmatic dependent launch (pdl.hpp; sm_90+, opt-in: STRATA_DF_PDL=1): the window's quantizations and dense
     // projections may start while the kernel before them finishes, loading their weights before they wait for its
@@ -1317,7 +1333,24 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         // move into the combine, gate + up share one launch (all bitwise; resident combine path, 2-8 rows only)
         const WeightRef* w_sgi = lfuse_on(n) && g_lfuse_gate() ? v.get("ffn_gate_inp_shexp.weight") : nullptr;
         bool sg_ready = false;
-        if (dec_batch && n > 1 && w_router != nullptr && native_router_enabled() && NE == 512 && K == 10) {
+        const bool front = g_front_fuse() && post_split_ok(l) && always_publish_ && w_router != nullptr &&
+                           native_router_enabled() && NE == 512 && K == 10 && route_resident_cfg().margin <= 0.0f &&
+                           w_sgi == nullptr && q8_ffn && !sh_fork && shared_expert_native_bf16_enabled()
+#if defined(STRATA_USE_HIP)
+                           && !g_doorbell_store
+#endif
+            ;
+        front_fused_[grp] = front;
+        if (front) {   // STRATA_HIP_FRONT_FUSE: the router's GEMV (the kernel either path below runs), then top-10 + doorbell
+            try {
+                if (n > 1)
+                    bf16_gemv_fp32_mmvf_multi(xm, N, (const uint16_t*) w_router->data, logits_ + tb * NE, NE, N, NE, n, cs);
+                else
+                    bf16_gemv_fp32_mmvf(xm, (const uint16_t*) w_router->data, logits_ + tb * NE, N, NE, cs);
+                native_route_doorbell(logits_ + tb * NE, ids_ + tb * K, w_ + tb * K, n, xm, (int64_t) n * N, m_x_ + tb * N,
+                                      m_ids_ + tb * K, m_w_ + tb * K, m_seq_, cs);
+            } catch (const std::exception& e) { err = "verify router (fused front): " + std::string(e.what()); return false; }
+        } else if (dec_batch && n > 1 && w_router != nullptr && native_router_enabled() && NE == 512 && K == 10) {
             try {
                 if (w_sgi != nullptr)
                     sg_ready = bf16_gemv_fp32_mmvf_multi_aux(mixed_ + tb * N, N, (const uint16_t*) w_router->data,
@@ -1355,7 +1388,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
             resident_plan(ids_ + tb * K, n * (int) K, (int) K, hits_.d_res + l * g.n_expert, (int) g.n_expert,
                           hits_.cache_base, slot_off_d_, (long long) hits_.blob,
                           plan_ + (size_t) grp * (size_t) (plan_i32_ + 16), (long long) max_t_ * K, nullptr, 0, cs, m_plan_err_);
-        } else {
+        } else if (!front) {
             if (device_plan_)   // E-6: every routed expert resident: this group's plan without the host
                 resident_plan(ids_ + tb * K, n * (int) K, (int) K, hits_.d_res + l * g.n_expert, (int) g.n_expert,
                               hits_.cache_base, slot_off_d_, (long long) hits_.blob,
@@ -1408,8 +1441,8 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
             try {
                 shared_expert_multi(n, xm, sh_bf16_ + tb * N, nsw, (const uint16_t*) wgi->data, sh_gate_ + (size_t) tb * g.n_ff,
                                     sh_up_ + (size_t) tb * g.n_ff, sh_g_ + tb, shared_ + tb * N, N, g.n_ff, sh_stream,
-                                    qdedup ? (const void*) (nat_xq_ + (size_t) tb * (N / 32) * 36) : nullptr,
-                                    (sg_ready ? 1 : 0) | (lfuse_on(n) && g_lfuse_pair() ? 2 : 0));
+                                    (qdedup || front) ? (const void*) (nat_xq_ + (size_t) tb * (N / 32) * 36) : nullptr,
+                                    (sg_ready || front ? 1 : 0) | (lfuse_on(n) && g_lfuse_pair() ? 2 : 0));
                 sg_gated_[grp] = sg_ready;
             } catch (const std::exception& e) {
                 err = std::string("verify shared expert: ") + e.what();
@@ -1470,8 +1503,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         };
         // STRATA_HIP_POST_SPLIT: the doorbell path's head and tail as persistent launches (the combine included)
         bool split_done = false;
-        if (!ar_on() && post_bar_ != nullptr && gather && !device_plan_ && !remote_opt_ && !prof_on_ && lay.native &&
-            sink_.pcie_mode == 2 && !sg_gated_[grp]) {
+        if (post_split_ok(l) && gather && !sg_gated_[grp]) {
             const auto& f = lay.fmt[(size_t) l];
             const NativeExpertLayout Lx = native_expert_layout(f.gu_type, f.d_type, f.n_embd, f.n_ff);
             const int64_t per = G == 2 ? kStagingBlobs / 2 : kStagingBlobs;
@@ -1484,7 +1516,17 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
             a.cpu_rows = m_ymiss_ + (size_t) tb * K * N; a.weights = w_ + tb * K; a.shared = shared_ + tb * N;
             a.output = bo_ + tb * N; a.k = (int) K; a.n_tok = n; a.bar = post_bar_;
             a.part = 1; a.blocks = 1;
-            if (strata::kernels::native_expert_post_persistent(a, Lx, cs)) {
+            bool head_ok;
+            if (front_fused_[grp]) {   // STRATA_HIP_FRONT_FUSE: the shared expert's gate, its scale, wait A, the plan
+                strata::kernels::GateScaleHeadArgs gh;
+                const WeightRef* wgi = LayerView(wt, l).get("ffn_gate_inp_shexp.weight");
+                gh.x = mixed_ + tb * N; gh.ldx = N; gh.w = wgi != nullptr ? (const uint16_t*) wgi->data : nullptr;
+                gh.g = sh_g_ + tb; gh.out = shared_ + tb * N; gh.n_embd = (int) N; gh.n_tok = n;
+                gh.flag_a = m_flagA_; gh.ring = ring; gh.m_plan = a.m_plan; gh.plan = pl; gh.plan_i32 = (int) plan_i32_;
+                head_ok = gh.w != nullptr && strata::kernels::native_gate_scale_head(gh, cs);
+                if (!head_ok) { err = "verify: the fused front's gate/head did not launch"; return false; }
+            } else head_ok = strata::kernels::native_expert_post_persistent(a, Lx, cs);
+            if (head_ok) {
                 grouped(p_ptr, p_start, p_counts, 0, hit_out);
                 a.part = 2; a.blocks = 40;
                 if (!strata::kernels::native_expert_post_persistent(a, Lx, cs)) {
@@ -1494,6 +1536,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 split_done = true;
             }
         }
+        if (front_fused_[grp] && !split_done) { err = "verify: the fused front ran without the split post()"; return false; }
         if (split_done) {
         } else if (ar_on()) {
             stamp(l, 19, grp);

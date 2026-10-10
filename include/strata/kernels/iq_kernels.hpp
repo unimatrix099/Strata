@@ -107,6 +107,8 @@ struct NativeExpertPostArgs {
                                          // the PCIe share, wait C, the combine): the VRAM experts' kernels between
 };
 bool native_expert_post_persistent(const NativeExpertPostArgs& args, const NativeExpertLayout& L, void* stream);
+/// Whether native_expert_post_persistent covers this layer (its types, the launcher's current path); no launch.
+bool native_expert_post_supported(const NativeExpertLayout& L);
 /// The most blocks of the persistent kernel that are resident at once on this device (a larger grid would deadlock).
 int native_expert_post_max_blocks();
 

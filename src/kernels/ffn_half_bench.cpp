@@ -251,7 +251,7 @@ int main(int argc, char** argv) {
     }
     const int n = ai < argc ? std::atoi(argv[ai++]) : 2;
     const int iters = ai < argc ? std::atoi(argv[ai++]) : 200;
-    if (n < 2 || n > 8) { std::fprintf(stderr, "rows 2..8 (the window's multi-row path)\n"); return 2; }
+    if (n < 1 || n > 8) { std::fprintf(stderr, "rows 1..8\n"); return 2; }
     const int64_t cap = (int64_t) n * KR, capx = cap;
     const int64_t ptr_off = ((4 + (capx + 1) + 2 * capx) + 1) & ~1ll;
     const int64_t plan_i32 = ptr_off + 4 * cap + (cap + 1) + 1;
@@ -331,7 +331,8 @@ int main(int argc, char** argv) {
         CK(cudaMalloc(&Y.xq, (size_t) n * N / 32 * 36));
         K::quantize_q8_1_rows(Y.x, n, N, Y.xq, s);
         K::bf16_gemv_fp32_mmvf_multi(Y.x, N, Y.router, logits, NE, N, NE, n, s);
-        K::native_router_top10_multi(logits, ids, w, n, s);
+        if (n == 1) K::native_router_top10(logits, ids, w, s);
+        else K::native_router_top10_multi(logits, ids, w, n, s);
         CK(cudaMalloc((void**) &Y.logits, (size_t) n * NE * 4));
         CK(cudaMemcpyAsync(Y.logits, logits, (size_t) n * NE * 4, cudaMemcpyDeviceToDevice, s));
         std::vector<int32_t> hid((size_t) cap);
@@ -396,7 +397,8 @@ int main(int argc, char** argv) {
         const unsigned long long* p_ptr2 = p_ptr + capx;
         const int32_t* p_start2 = pl + ptr_off + 4 * capx;
         K::bf16_gemv_fp32_mmvf_multi(Y.x, N, Y.router, logits, NE, N, NE, n, s);
-        K::native_router_top10_multi(logits, ids, w, n, s);
+        if (n == 1) K::native_router_top10(logits, ids, w, s);
+        else K::native_router_top10_multi(logits, ids, w, n, s);
         K::doorbell_publish(Y.x, ids, w, (int64_t) n * N, (int64_t) n * KR, m_x, m_ids, m_w, m_seq, s);
         K::shared_expert_multi(n, Y.x, nullptr, Y.sh, Y.sgi, sh_gate, sh_up, sh_g, shared, N, FF, s, nullptr, 0);
         K::wait_flag_ge(m_flagA, 1, s);
@@ -419,7 +421,8 @@ int main(int argc, char** argv) {
     // post() as ONE launch (native_expert_post_persistent), the front as today's kernels
     auto chain_post = [&](const Layer& Y) -> bool {
         K::bf16_gemv_fp32_mmvf_multi(Y.x, N, Y.router, logits, NE, N, NE, n, s);
-        K::native_router_top10_multi(logits, ids, w, n, s);
+        if (n == 1) K::native_router_top10(logits, ids, w, s);
+        else K::native_router_top10_multi(logits, ids, w, n, s);
         K::doorbell_publish(Y.x, ids, w, (int64_t) n * N, (int64_t) n * KR, m_x, m_ids, m_w, m_seq, s);
         K::shared_expert_multi(n, Y.x, nullptr, Y.sh, Y.sgi, sh_gate, sh_up, sh_g, shared, N, FF, s, nullptr, 0);
         K::NativeExpertPostArgs a;
@@ -492,7 +495,8 @@ int main(int argc, char** argv) {
     // the split: the head and the tail persistent, the VRAM experts as today's three kernels between them
     auto chain_split = [&](const Layer& Y) -> bool {
         K::bf16_gemv_fp32_mmvf_multi(Y.x, N, Y.router, logits, NE, N, NE, n, s);
-        K::native_router_top10_multi(logits, ids, w, n, s);
+        if (n == 1) K::native_router_top10(logits, ids, w, s);
+        else K::native_router_top10_multi(logits, ids, w, n, s);
         K::doorbell_publish(Y.x, ids, w, (int64_t) n * N, (int64_t) n * KR, m_x, m_ids, m_w, m_seq, s);
         K::shared_expert_multi(n, Y.x, nullptr, Y.sh, Y.sgi, sh_gate, sh_up, sh_g, shared, N, FF, s, nullptr, 0);
         K::NativeExpertPostArgs a;
@@ -545,6 +549,64 @@ int main(int argc, char** argv) {
         std::printf("chain with post() split (head | 3 expert kernels | tail): %zu nodes (%.1f per layer): best %.1f us "
                     "per layer, %zu of %zu outputs differ\n", nodes4, (double) nodes4 / Ls.size(), 1e3 * best4 / Ls.size(),
                     diff, ref.size() * ref[0].size());
+    }
+    // the fused front: top-10 + doorbell in one launch, the shared expert without its own quantize (the QFUSE bytes) and
+    // without its gate, then the gate + scale + post()'s head in one launch, the experts, the tail
+    auto chain_front = [&](const Layer& Y) -> bool {
+        K::bf16_gemv_fp32_mmvf_multi(Y.x, N, Y.router, logits, NE, N, NE, n, s);
+        K::native_route_doorbell(logits, ids, w, n, Y.x, (int64_t) n * N, m_x, m_ids, m_w, m_seq, s);
+        K::shared_expert_multi(n, Y.x, nullptr, Y.sh, Y.sgi, sh_gate, sh_up, sh_g, shared, N, FF, s, Y.xq, 1);
+        K::GateScaleHeadArgs gh;
+        gh.x = Y.x; gh.ldx = N; gh.w = Y.sgi; gh.g = sh_g; gh.out = shared; gh.n_embd = (int) N; gh.n_tok = n;
+        gh.flag_a = m_flagA; gh.ring = 1; gh.m_plan = Y.m_plan; gh.plan = Y.plan; gh.plan_i32 = (int) plan_i32;
+        if (!K::native_gate_scale_head(gh, s)) return false;
+        int32_t* pl = Y.plan;
+        const int32_t* p_start = pl + 4;
+        const int32_t* p_dst = p_start + capx + 1;
+        const int32_t* p_tok = p_dst + capx;
+        const unsigned long long* p_ptr = (const unsigned long long*) (pl + ptr_off);
+        K::native_expert_grouped(Y.L, p_ptr, p_start, pl, p_dst, p_tok, cap, cap, Y.xq, scratch, hit_out, s, 0);
+        K::NativeExpertPostArgs a;
+        a.flag_a = m_flagA; a.flag_b = m_flagB; a.flag_c = m_flagC; a.ring = 1;
+        a.m_plan = Y.m_plan; a.plan = Y.plan; a.plan_i32 = (int) plan_i32;
+        a.capx = capx; a.ptr_off = ptr_off; a.cap = cap;
+        a.xq = Y.xq; a.scratch = scratch; a.hit_out = hit_out;
+        a.stage = stage; a.blob_bytes = (long long) Y.blob;
+        a.cpu_rows = m_ymiss; a.weights = w; a.shared = shared; a.output = bo;
+        a.k = (int) KR; a.n_tok = n; a.bar = post_bar; a.part = 2; a.blocks = 40;
+        return K::native_expert_post_persistent(a, Y.L, s);
+    };
+    {
+        size_t diff = 0;
+        for (int rep2 = 0; rep2 < 3; ++rep2) {
+            const auto got = outputs(chain_front);
+            for (size_t i = 0; i < ref.size(); ++i)
+                for (size_t j = 0; j < ref[i].size(); ++j)
+                    if (std::memcmp(&ref[i][j], &got[i][j], 4) != 0) ++diff;
+        }
+        cudaGraph_t g5;
+        cudaGraphExec_t ge5;
+        CK(cudaStreamBeginCapture(s, cudaStreamCaptureModeThreadLocal));
+        for (const auto& Y : Ls) chain_front(Y);
+        CK(cudaStreamEndCapture(s, &g5));
+        size_t nodes5 = 0;
+        CK(cudaGraphGetNodes(g5, nullptr, &nodes5));
+        CK(cudaGraphInstantiate(&ge5, g5, nullptr, nullptr, 0));
+        for (int i = 0; i < 20; ++i) CK(cudaGraphLaunch(ge5, s));
+        CK(cudaStreamSynchronize(s));
+        float best5 = 1e30f;
+        for (int r = 0; r < rounds; ++r) {
+            CK(cudaEventRecord(e0, s));
+            for (int i = 0; i < iters; ++i) CK(cudaGraphLaunch(ge5, s));
+            CK(cudaEventRecord(e1, s));
+            CK(cudaEventSynchronize(e1));
+            float ms = 0;
+            CK(cudaEventElapsedTime(&ms, e0, e1));
+            if (ms / iters < best5) best5 = ms / iters;
+        }
+        std::printf("chain with the fused front + split post(): %zu nodes (%.1f per layer): best %.1f us per layer, "
+                    "%zu of %zu outputs differ over 3 runs\n", nodes5, (double) nodes5 / Ls.size(), 1e3 * best5 / Ls.size(),
+                    diff, 3 * ref.size() * ref[0].size());
     }
     {
         cudaGraph_t g3;

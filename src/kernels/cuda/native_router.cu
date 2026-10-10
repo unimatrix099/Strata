@@ -96,13 +96,9 @@ __global__ void route(const float* __restrict__ logits, int32_t* __restrict__ id
     const float inverse_selected_sum = 1.0f / selected_sum;
     if (lane < 10) weights[lane] = selected * inverse_selected_sum;
 }
-__launch_bounds__(256, 1)
-__global__ void route_multi(const float* __restrict__ logits, int32_t* __restrict__ ids,
-                            float* __restrict__ weights, int n_tok) {
-    const int tk = (int) blockIdx.x * 8 + (int) threadIdx.y;
-    if (tk >= n_tok) return;
-    logits += (size_t) tk * 512; ids += (size_t) tk * 10; weights += (size_t) tk * 10;
-    const int lane = threadIdx.x;
+// one row's top-10 (one wave, `lane` = 0..31): route_multi's per-token code, shared with route_doorbell_kernel
+__device__ __forceinline__ void route_row(const float* __restrict__ logits, int32_t* __restrict__ ids,
+                                          float* __restrict__ weights, const int lane) {
     float values[16];
 #pragma unroll
     for (int i = 0; i < 16; ++i) values[i] = logits[lane + i * 32];
@@ -147,6 +143,38 @@ __global__ void route_multi(const float* __restrict__ logits, int32_t* __restric
     selected_sum = max(warp_sum(selected_sum), 6.103515625e-5f);
     const float inverse_selected_sum = 1.0f / selected_sum;
     if (lane < 10) weights[lane] = selected * inverse_selected_sum;
+}
+__launch_bounds__(256, 1)
+__global__ void route_multi(const float* __restrict__ logits, int32_t* __restrict__ ids,
+                            float* __restrict__ weights, int n_tok) {
+    const int tk = (int) blockIdx.x * 8 + (int) threadIdx.y;
+    if (tk >= n_tok) return;
+    logits += (size_t) tk * 512; ids += (size_t) tk * 10; weights += (size_t) tk * 10;
+    route_row(logits, ids, weights, (int) threadIdx.x);
+}
+// the window's top-10 (warp t: row t) and then the doorbell (doorbell_publish_kernel's copies, fences and ring) in one
+// launch: the rows' values are route_row's, the host sees the same bytes and the same ring
+__launch_bounds__(256, 1)
+__global__ void route_doorbell_kernel(const float* __restrict__ logits, int32_t* __restrict__ ids,
+                                      float* __restrict__ weights, int n_tok, const float* __restrict__ x, int nx,
+                                      float* x_out, int32_t* ids_out, float* w_out, uint32_t* seq) {
+    const int warp = (int) threadIdx.x >> 5;
+    if (warp < n_tok) route_row(logits + (size_t) warp * 512, ids + (size_t) warp * 10, weights + (size_t) warp * 10,
+                                (int) threadIdx.x & 31);
+    __syncthreads();
+    for (int i = threadIdx.x; i < nx; i += blockDim.x) x_out[i] = x[i];
+    for (int i = threadIdx.x; i < n_tok * 10; i += blockDim.x) {
+        ids_out[i] = ids[i];
+        w_out[i] = weights[i];
+    }
+    __threadfence_system();
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        *(volatile uint32_t*) seq = *(volatile uint32_t*) seq + 1u;
+#if defined(__HIPCC__)  // #697, as doorbell_publish_kernel
+        __threadfence_system();
+#endif
+    }
 }
 bool valid(const void* p, size_t bytes) {
     const auto address = reinterpret_cast<uintptr_t>(p);
@@ -230,3 +258,15 @@ void native_route_resident(const float* logits, int32_t* ids, float* weights, co
     if (error != cudaSuccess) throw std::runtime_error(cudaGetErrorString(error));
 }
 }
+
+namespace strata::kernels {
+void native_route_doorbell(const float* logits, int32_t* ids, float* weights, int n_tok, const float* x, int64_t n_x,
+                           float* x_out, int32_t* ids_out, float* w_out, uint32_t* d_seq, void* stream) {
+    if (!stream || n_tok < 1 || n_tok > 8 || !logits || !ids || !weights || !x || !x_out || !ids_out || !w_out || !d_seq)
+        throw std::invalid_argument("native_route_doorbell: 1..8 rows, a stream and every buffer");
+    route_doorbell_kernel<<<1, 256, 0, static_cast<cudaStream_t>(stream)>>>(logits, ids, weights, n_tok, x, (int) n_x,
+                                                                          x_out, ids_out, w_out, d_seq);
+    const auto error = cudaGetLastError();
+    if (error != cudaSuccess) throw std::runtime_error(cudaGetErrorString(error));
+}
+}  // namespace strata::kernels
