@@ -1,0 +1,18 @@
+== device 1: 48 multiprocessors x 8 resident blocks of 256 = 384 blocks at most for a persistent kernel
+   per phase: graph of kernels | persistent (atomic barrier); GB/s of each
+    2 MB phases,   96 blocks: graph    7.13 us (   294 GB/s) | persistent    3.41 us (   615 GB/s)  -> 52.2% less
+    2 MB phases,  192 blocks: graph    5.91 us (   355 GB/s) | persistent    3.23 us (   649 GB/s)  -> 45.3% less
+    2 MB phases,  384 blocks: graph   15.00 us (   140 GB/s) | persistent    3.47 us (   604 GB/s)  -> 76.9% less
+    2 MB phases,  768 blocks: above the resident limit, skipped
+    8 MB phases,   96 blocks: graph   11.90 us (   705 GB/s) | persistent    9.74 us (   861 GB/s)  -> 18.1% less
+    8 MB phases,  192 blocks: graph   11.68 us (   718 GB/s) | persistent    9.81 us (   855 GB/s)  -> 16.0% less
+    8 MB phases,  384 blocks: graph   15.45 us (   543 GB/s) | persistent   10.46 us (   802 GB/s)  -> 32.3% less
+    8 MB phases,  768 blocks: above the resident limit, skipped
+   24 MB phases,   96 blocks: graph   30.76 us (   818 GB/s) | persistent   27.99 us (   899 GB/s)  -> 9.0% less
+   24 MB phases,  192 blocks: graph   30.63 us (   822 GB/s) | persistent   28.13 us (   895 GB/s)  -> 8.2% less
+   24 MB phases,  384 blocks: graph   37.43 us (   672 GB/s) | persistent   29.49 us (   853 GB/s)  -> 21.2% less
+   24 MB phases,  768 blocks: above the resident limit, skipped
+   96 MB phases,   96 blocks: graph  115.97 us (   868 GB/s) | persistent  110.35 us (   912 GB/s)  -> 4.8% less
+   96 MB phases,  192 blocks: graph  115.71 us (   870 GB/s) | persistent  110.41 us (   912 GB/s)  -> 4.6% less
+   96 MB phases,  384 blocks: graph  116.22 us (   866 GB/s) | persistent  115.20 us (   874 GB/s)  -> 0.9% less
+   96 MB phases,  768 blocks: above the resident limit, skipped

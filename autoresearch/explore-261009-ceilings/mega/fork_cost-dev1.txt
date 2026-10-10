@@ -1,0 +1,10 @@
+== 192 blocks x 256 per kernel
+  one chain, 27 x 13 kernels:                    2.153 ms per window, 6.13 us per kernel (351 nodes)
+  27 x [fork 7 | 6, join]:                       1.867 ms per window, 5.32 us per kernel (351 nodes)
+  27 x [fork 7 | 6, join], side kernels 1 block: 2.079 ms per window, 5.92 us per kernel (351 nodes)
+  one chain, side kernels 1 block (the same work): 2.173 ms per window, 6.19 us per kernel (351 nodes)
+== 96 blocks x 256 per kernel
+  one chain, 27 x 13 kernels:                    1.715 ms per window, 4.89 us per kernel (351 nodes)
+  27 x [fork 7 | 6, join]:                       1.574 ms per window, 4.48 us per kernel (351 nodes)
+  27 x [fork 7 | 6, join], side kernels 1 block: 1.514 ms per window, 4.31 us per kernel (351 nodes)
+  one chain, side kernels 1 block (the same work): 1.901 ms per window, 5.42 us per kernel (351 nodes)

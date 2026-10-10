@@ -1,0 +1,9 @@
+== device 1: AMD Radeon RX 7900 XTX, 48 CUs, cooperativeLaunch 1
+  graph of 500 empty kernels (96 blocks x 256): 2.097 ms -> 4.19 us per kernel
+  500 empty kernels as stream launches: 1.673 ms -> 3.35 us per kernel
+  graph of 500 256KB-per-block kernels (96 blocks x 256): 6.385 ms -> 12.77 us per kernel
+  500 256KB-per-block kernels as stream launches: 6.496 ms -> 12.99 us per kernel
+  one persistent kernel, 500 phases x 256KB-per-block, atomic grid barrier: 5.217 ms -> 10.43 us per phase
+  one persistent kernel, 500 empty phases, atomic grid barrier: 0.186 ms -> 0.37 us per barrier
+  cooperative kernel, 500 phases x 256KB-per-block, grid.sync(): 5.379 ms -> 10.76 us per phase
+  cooperative kernel, 500 empty phases, grid.sync(): 0.292 ms -> 0.58 us per sync

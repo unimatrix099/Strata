@@ -1,0 +1,4 @@
+  150 empty kernels, stream launches:            4.44 us per kernel
+  150 empty kernels, hipExtAnyOrderLaunch:        4.51 us per kernel
+  150 2-MB kernels, stream launches:             7.51 us per kernel (279 GB/s)
+  150 2-MB kernels, hipExtAnyOrderLaunch:         3.76 us per kernel (558 GB/s)

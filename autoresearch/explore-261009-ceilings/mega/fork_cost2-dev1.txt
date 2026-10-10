@@ -1,0 +1,5 @@
+  one chain, 27 x 39 kernels (side work inline):             6.960 ms per window (1053 nodes); hipGraphLaunch blocks the host 0.139 ms
+  27 x [fork: 7 x 2-MB side | 32 main, join]:                5.693 ms per window (1053 nodes); hipGraphLaunch blocks the host 1.641 ms
+  27 x [fork: 7 side | 20 main, join, 12 main]:              5.665 ms per window (1053 nodes); hipGraphLaunch blocks the host 1.429 ms
+  one chain, 2-MB kernels only (27 x 39):                    4.974 ms per window (1053 nodes); hipGraphLaunch blocks the host 0.270 ms
+  27 x [fork 7 | 32, join], 2-MB kernels only:               5.279 ms per window (1053 nodes); hipGraphLaunch blocks the host 1.634 ms

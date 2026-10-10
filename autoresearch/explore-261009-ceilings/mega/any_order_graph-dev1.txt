@@ -1,0 +1,5 @@
+  graph, plain launches:                               6.63 us per kernel (150 nodes)
+  graph, hipExtAnyOrderLaunch captured:                5.49 us per kernel (150 nodes)
+  graph, two branches (fork/join), 75 kernels each:    3.90 us per kernel (150 nodes)
+  graph, two branches, 96-block kernels:               3.74 us per kernel (150 nodes)
+  no graph, two streams, 96-block kernels:             4.03 us per kernel
