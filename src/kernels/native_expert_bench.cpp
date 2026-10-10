@@ -41,6 +41,9 @@ int main(int argc, char** argv) {
     }
     const int G = std::atoi(argv[3]), T = std::atoi(argv[4]), mref = std::atoi(argv[5]), mode = std::atoi(argv[6]);
     const int iters = argc > 7 ? std::atoi(argv[7]) : 200;
+    // NATIVE_EXPERT_BENCH_GY=N: the launches' block rows (grid_groups; 0 = one per group): a fixed grid striding over
+    // the groups, as a persistent kernel would run them (the results do not depend on it)
+    const int64_t grid_groups = std::getenv("NATIVE_EXPERT_BENCH_GY") ? std::atoll(std::getenv("NATIVE_EXPERT_BENCH_GY")) : 0;
     const int NTOK = 8;
     if (T < 1 || T > NTOK || G < 1) { std::fprintf(stderr, "tokens 1..8, groups >= 1\n"); return 2; }
     const int64_t H = 2560, FF_FULL = 640, FF = FF_FULL;   // Flash-Next's expert geometry
@@ -119,7 +122,7 @@ int main(int argc, char** argv) {
         K::quantize_q8_1_rows((const float*) dx, NTOK, H, dxq, s);
         auto run = [&](int m, int phase) {
             K::native_expert_set_mode(m, phase);
-            K::native_expert_grouped(L, dptr, dstart, dn, ddst, dtok, G, NE, dxq, dscr, dout, s);
+            K::native_expert_grouped(L, dptr, dstart, dn, ddst, dtok, G, NE, dxq, dscr, dout, s, grid_groups);
         };
         std::vector<float> ref((size_t) NE * H), got((size_t) NE * H);
         cudaMemsetAsync(dout, 0xff, got.size() * 4, s);

@@ -152,8 +152,36 @@ first real step.
   stream VRAM as well from a fixed 192-block grid. That can be measured first, in a day, with a stand-alone copy of
   `native_gu_*` / `native_down_multi_kernel` over a fixed grid against the originals - the go/no-go for the weeks.
 
+## 7. The go/no-go probe: the expert kernels from a fixed grid (10 Oct, `expert_fixed_grid-dev1.txt`)
+
+`build-hip/native_expert_bench` (the engine's own grouped expert kernels on real rows of the GGUF, card 1) with a new
+switch `NATIVE_EXPERT_BENCH_GY=N`: the launches get N block rows that stride over the experts (the launcher's existing
+`grid_groups`, which the window's PCIe pass already uses) instead of one block row per expert. A block row is 80 blocks
+for gate/up and 80 for down, so N = 2 / 4 is a fixed grid of 160 / 320 blocks - what a persistent kernel would run.
+A decode step's layer has ~18 experts with one row each (two rows, ten experts each, mostly distinct); also 9 x 2.
+
+| layer, experts x rows | one block row per expert (today) | fixed 320 blocks (N 4) | fixed 160 blocks (N 2) | fixed 80 blocks (N 1) |
+|---|---|---|---|---|
+| 3, 18 x 1 | 56.3 us | 55.7 us (-1%) | 64.3 us (+14%) | 75.1 us (+33%) |
+| 10, 18 x 1 | 57.5 us | 57.8 us (0%) | 65.6 us (+14%) | 74.8 us (+30%) |
+| 3, 9 x 2 | 42.6 us | 41.0 us (-4%) | 45.3 us (+6%) | 52.0 us (+22%) |
+| 10, 9 x 2 | 44.8 us | 42.3 us (-6%) | 46.5 us (+4%) | 51.7 us (+15%) |
+
+Bitwise equal in every case (the group stride does not change any sum). The times include each kernel's launch
+(gate/up, swiglu, down), so they are the stand-alone kernels, not phases.
+
+**GO.** A 320-block grid - inside gfx1100's 384 resident blocks - runs the experts as fast as today's launches. At
+160 blocks (half the resident limit, the margin for card 2's drafter stream) they are 4-14% slower: ~7 us per layer,
+~0.2 ms per window on card 1, against the ~3-4 ms of launch gaps a persistent window would remove. So the grid size
+is not the obstacle. Card 1 has no drafter stream and can take 320; card 2 can start at 192-256 and be measured.
+
+Seen on the way: even launched alone the expert kernels read at 300-490 GB/s, a third to half of the card's 917 -
+18 experts of ~1.3 MB each are too little work per kernel to stream at full speed. Phases of one kernel that start the
+next expert's reads while the last ones finish are where the rest of stage 2's gain would come from (section 2: 2-MB
+phases at 615-650 GB/s against 294-355 as kernels).
+
 ## Files
 
 `launch_gap.cpp`, `phase_bw.cpp`, `any_order.cpp`, `any_order_graph.cpp`, `fork_cost.cpp` and their `*-dev1.txt`
-outputs (`fork_cost2.cpp` with the host-blocking measurement, run 10 Oct morning); the A/Bs ran with `~/strata-tools/d7.sh`, `d8.sh` (copies here), results `D7-*`, `D8-*` in
+outputs, `expert_fixed_grid-dev1.txt` (section 7; `src/kernels/native_expert_bench.cpp`'s new `NATIVE_EXPERT_BENCH_GY`) (`fork_cost2.cpp` with the host-blocking measurement, run 10 Oct morning); the A/Bs ran with `~/strata-tools/d7.sh`, `d8.sh` (copies here), results `D7-*`, `D8-*` in
 `../data/branches.jsonl`.
