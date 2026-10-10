@@ -215,6 +215,10 @@ the bandwidth of kernels, so 114 -> ~60-70 us is plausible but not shown. **Revi
 150 -> ~85-110 us, decode roughly +6-12%** (was +12-17%), the upper half only if the expert phases stream as the
 micro-benchmark did.
 
+Also checked (`router/route_time.cpp`): the top-10 (`route_multi`, 8.4 us in the trace, one wave per row, ten
+dependent cross-lane argmax rounds) costs 6.7 us per launch in a graph chain against 3.2 us for an empty launch of the
+same shape - ~3.5 us of work per layer, at most ~1% of decode to win. Left as is.
+
 ## Files
 
 `launch_gap.cpp`, `phase_bw.cpp`, `any_order.cpp`, `any_order_graph.cpp`, `fork_cost.cpp` and their `*-dev1.txt`
