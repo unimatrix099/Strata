@@ -1,0 +1,14 @@
+  empty fetch, 384 blocks x 256: 14.00 us per job in a graph chain
+  empty fetch, 352 blocks x 256: 2.69 us per job in a graph chain
+  empty fetch, 320 blocks x 256: 2.70 us per job in a graph chain
+  empty fetch, 256 blocks x 256: 2.75 us per job in a graph chain
+  empty fetch, 192 blocks x 256: 2.76 us per job in a graph chain
+  empty fetch,  96 blocks x 256: 2.75 us per job in a graph chain
+  empty fetch,  48 blocks x 256: 2.75 us per job in a graph chain
+  empty fetch,  16 blocks x 256: 2.76 us per job in a graph chain
+  empty fetch,   1 blocks x 256: 2.74 us per job in a graph chain
+  one 2.3 MB blob from mapped host memory, 384 blocks: 354.0 us (6.90 GB/s)
+  one 2.3 MB blob from mapped host memory, 192 blocks: 350.1 us (6.97 GB/s)
+  one 2.3 MB blob from mapped host memory,  96 blocks: 349.7 us (6.98 GB/s)
+  one 2.3 MB blob from mapped host memory,  48 blocks: 349.8 us (6.98 GB/s)
+  one 2.3 MB blob from mapped host memory,  16 blocks: 351.2 us (6.95 GB/s)

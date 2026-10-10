@@ -98,7 +98,7 @@ version, each stage measurable on its own:
 |---|---|---|---|---|
 | 0 | the two graph branches that exist (`STRATA_SH_STREAM=1`, `STRATA_DF_BRANCH=1`) | none; ~10 kernels per layer overlap the chain | **measured: 0.70-0.74x, dropped** | none |
 | 1 | horizontal merges: the GDN's qkv ∥ z ∥ a/b in one launch, the QSA's five projections in one, the shared expert's gate ∥ up | ~75 | 2-3% | days |
-| 2 | the FFN half as one persistent kernel per layer (router -> doorbell -> shared expert -> wait A -> experts -> wait B -> PCIe -> wait C -> combine): identical for both layer types | ~22 x 27 = 600 | **12-17%** | 2-3 weeks (the expert kernels as work loops over a fixed grid; the three host waits inside) |
+| 2 | the FFN half as one persistent kernel per layer (router -> doorbell -> shared expert -> wait A -> experts -> wait B -> PCIe -> wait C -> combine): identical for both layer types | ~22 x 27 = 600 | **12-17%** (revised 10 Oct after measuring: +6-12%, section 8) | 2-3 weeks (the expert kernels as work loops over a fixed grid; the three host waits inside) |
 | 3 | the hyper-connection triple + the GDN mixer as one kernel (3 barriers + 2) | ~10 x 21 = 210 | 5-7% | 1-2 weeks |
 | 4 | the QSA mixer (attention chunks and merge inside a fixed grid) | ~25 x 6 = 150 | 3-4% | 2 weeks, the hardest |
 
@@ -179,6 +179,41 @@ Seen on the way: even launched alone the expert kernels read at 300-490 GB/s, a 
 18 experts of ~1.3 MB each are too little work per kernel to stream at full speed. Phases of one kernel that start the
 next expert's reads while the last ones finish are where the rest of stage 2's gain would come from (section 2: 2-MB
 phases at 615-650 GB/s against 294-355 as kernels).
+
+## 8. Step 1 of the build: the FFN half measured on real weights (10 Oct)
+
+**A kernel trace of the production decode** (`rocprofv3 --kernel-trace`, story + code, 256 tokens; the trace slows
+decode tenfold, so only the kernels' own durations are used): each layer's FFN half is exactly **23 kernels** on both
+cards (router GEMV, top-10, doorbell, the shared expert's 7, wait A, plan copy, gate/up, swiglu, down, wait B, fetch,
+rebase, the PCIe pass's 3, wait C, combine), ~111-124 us of kernel time per layer.
+
+**Found on the way, fixed and installed:** `fetch_blobs_kernel` (the PCIe share's copy into staging) took 12-15 us in
+every layer although it nearly never has anything to copy (card 2: never in the trace). `empty_grid.cpp`: an empty
+launch of **384 x 256 blocks - exactly 48 CUs x 8 - costs 14.0-15.8 us; 352 blocks or fewer 2.7-3.0 us**, on both
+cards; a real copy of one 2.3 MB blob from mapped host memory runs at 6.9 GB/s with 16 to 384 blocks alike. No other
+kernel of the window launches 384 blocks. The copy now launches 96 blocks on HIP (`verify_kernels.cu`; CUDA keeps 384).
+Measured against the installed engine: exact protocol the same text (hashes 928818aa87 / 449d3d4c28 both), story
+88.7 -> 91.5, code 108.4 -> 113.3 tok/s; eight prompts in three alternating rounds 1.100, 1.014, 1.062 (19 of 24 prompts
+faster; means 106.5 -> 112.5 tok/s). In production since 10 Oct (`engine/strata-before-fetch96` is the old one).
+
+**The harness** (`src/kernels/ffn_half_bench.cpp`, built as `build-hip/ffn_half_bench`): the FFN half of 8 layers
+(1, 2, 4, 5, 6, 8, 9, 10) on their real GGUF weights in one graph, 2 rows, every routed expert in VRAM, the plan
+written into mapped memory as the pool writes it, the host flags raised beforehand. Card 1, idle:
+
+| | per layer |
+|---|---|
+| the chain as it runs today (23 kernels, untraced) | **150 us** |
+| the sum of the 23 kernels' own durations (the same harness under the trace) | 114 us |
+| so the gaps between the kernels | **~36 us** (1.6 us per boundary) |
+
+Inside a graph the next kernel's dispatch overlaps the running one, so a boundary costs ~1.6 us here, not the 4.2 us
+an empty kernel costs (section 1). That halves the estimate of section 5 for the gaps alone: ~36 us x 27 layers =
+~1.0 ms per window on card 1 (~9%), ~0.75 ms on card 2. What a persistent FFN half could gain beyond that is the
+kernels running faster as phases: per layer it reads ~31 MB (experts ~26, router 2.6, shared expert ~2.7), 35-48 us at
+650-900 GB/s against the 114 us the kernels take; the 2-MB-phase measurement (section 2) says phases get about twice
+the bandwidth of kernels, so 114 -> ~60-70 us is plausible but not shown. **Revised estimate for stage 2: per layer
+150 -> ~85-110 us, decode roughly +6-12%** (was +12-17%), the upper half only if the expert phases stream as the
+micro-benchmark did.
 
 ## Files
 

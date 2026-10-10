@@ -628,7 +628,16 @@ __global__ void force_token_kernel(int32_t* tok, const int32_t* force, int j) {
 void fetch_blobs(const unsigned long long* src, const int32_t* n, uint8_t* dst, int64_t blob_bytes, int cap, void* stream) {
     if (cap <= 0) return;
     if (blob_bytes % 16 != 0) { std::fprintf(stderr, "fetch_blobs: blob size must be a multiple of 16\n"); std::exit(1); }
-    fetch_blobs_kernel<<<48 * 8, 256, 0, (cudaStream_t) stream>>>(src, n, (uint4*) dst, (long long) (blob_bytes / 16));
+#if defined(STRATA_USE_HIP)
+    // gfx1100 (RX 7900 XTX, ROCm 7.9): a 384 x 256 launch - exactly 48 CUs x 8 blocks - costs 14-16 us even when *n is
+    // 0 (the PCIe share is nearly always empty, and this runs in every layer of every window), 352 blocks or fewer
+    // 2.7-3.0 us; a real fetch reads mapped host memory at 6.9 GB/s from 16 to 384 blocks alike
+    // (autoresearch/explore-261009-ceilings/mega/empty_grid.cpp)
+    constexpr unsigned kFetchBlocks = 96;
+#else
+    constexpr unsigned kFetchBlocks = 48 * 8;
+#endif
+    fetch_blobs_kernel<<<kFetchBlocks, 256, 0, (cudaStream_t) stream>>>(src, n, (uint4*) dst, (long long) (blob_bytes / 16));
     check("fetch_blobs");
 }
 
