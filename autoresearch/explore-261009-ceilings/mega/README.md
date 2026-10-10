@@ -219,6 +219,47 @@ Also checked (`router/route_time.cpp`): the top-10 (`route_multi`, 8.4 us in the
 dependent cross-lane argmax rounds) costs 6.7 us per launch in a graph chain against 3.2 us for an empty launch of the
 same shape - ~3.5 us of work per layer, at most ~1% of decode to win. Left as is.
 
+## 9. Step 1b: the floor of a persistent FFN half (10 Oct, `ffn_half_bench`'s second part)
+
+`floor_persistent` in `src/kernels/ffn_half_bench.cpp`: one persistent kernel walking each layer's FFN half as 9
+phases with a grid barrier between them. It reads exactly the bytes the 23 kernels read (the router, the shared
+expert's three matrices and its gate row, the routed experts' gate/up rows and then their down rows, the small
+activation buffers), and the serial steps run for real on block 0: the top-10 (`route_multi`'s arithmetic on the
+layer's real logits), the doorbell (the same mapped writes, system fences and ring), the spin waits on the mapped
+flags and the plan's copy from mapped memory. No expert or projection arithmetic. The top-10 runs while the other
+blocks read the shared expert's gate/up, the doorbell beside its SwiGLU (neither depends on the other). Card 1, 8
+layers, 2 rows, the same run as the chain:
+
+| per layer | us |
+|---|---|
+| the chain today (23 kernels, with the arithmetic) | 150 |
+| the floor's phases as one kernel each (9 kernels, graph) | 89 |
+| **the floor as one persistent kernel (96 or 192 blocks alike)** | **67** |
+
+Where the 67 us go (block 0's clock after each barrier, 50 runs): router 3.9 (2.6 MB, 690 GB/s); top-10 beside the
+shared gate/up 9.4; doorbell beside the shared SwiGLU 8.9; shared down 2.0; wait A + plan copy 3.0; experts gate/up
+22.0 (19.1 MB, 866 GB/s); SwiGLU 1.0; experts down 13.4 (11.2 MB, 830 GB/s); waits B, C + combine 2.7. So ~44 us of
+reads at near the card's bandwidth and ~24 us of serial one-block steps (the top-10 and the doorbell ~9 us each).
+
+(Two reader bugs on the way, kept in the history of this section's numbers: one load in flight per thread gave 99 us
+and 490 GB/s on the experts; the region lookup in global memory 89 us and 545 GB/s; the LDS table and four loads in
+flight per thread give the 67.)
+
+What it says about the build:
+- Today's expert kernels already read at about this speed (the trace: gate/up ~20 us for the 19 MB, down ~13-20), so
+  a persistent FFN half does not need faster arithmetic: the ~80 us per layer between 150 and ~70 are the small
+  kernels' fixed costs and the gaps.
+- The harness raises the host's flags beforehand. In production the plan (the CPU pool's answer to the doorbell)
+  arrives ~35-55 us after the doorbell: today's window waits 7-24 us per layer for it on top of the shared expert's
+  ~30 us of kernels that run meanwhile (the stage profile's `waitA`, 0.2-0.65 ms per window over 27 layers). A
+  persistent half has only ~8 us of shared-expert work there, so ~20 us more of that wait shows.
+- So, per layer in production: today ~150 + 7-24 = ~157-174 us; persistent ~67 + a few us of arithmetic + ~29-46 of
+  exposed wait = ~95-115 us. **~60 us per layer: card 1 ~1.6 ms of its 10.6 ms window (-15%), card 2 ~1.2 ms of 9.8
+  (-12%); decode perhaps +10-14%** - back near the first estimate, for a different reason than first assumed (not the
+  boundary gaps alone but the small kernels' fixed costs).
+- The CPU's response time becomes the largest single item of a persistent FFN half. Making the pool answer sooner
+  (or planning on the device when all of a group's experts are resident) is worth more once the half is persistent.
+
 ## Files
 
 `launch_gap.cpp`, `phase_bw.cpp`, `any_order.cpp`, `any_order_graph.cpp`, `fork_cost.cpp` and their `*-dev1.txt`
