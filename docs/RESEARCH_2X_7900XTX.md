@@ -253,3 +253,14 @@ practical compute ceiling ~4,200 tok/s, measured 1,100-1,460 (card 1 alone 1,880
 `STRATA_PF_FUSED=1`: 1,438 -> 2,057 tok/s on a 32K prompt (+45%; rounds differently, opt-in); `STRATA_PF_GEMM=1`,
 16K chunks, `STRATA_PREFILL_HELP=1`: within 2%. The largest decode lever by the roofline is tokens per window (an
 extra row costs ~1.2 of 10.6 ms), i.e. a better drafter; then fewer kernels per window.
+
+## 12. 10 Oct: option B on AMD - fewer kernels per decode window
+
+A kernel trace found the PCIe copy kernel's 384-block launch costing 14-16 us in every layer for nothing (fixed: 96
+blocks, +6%). A persistent kernel for each layer's FFN half was then built bit-exact (the kernel bodies as virtual
+blocks of one launch); the expert kernels ran 2x slower looped inside it, so they stay kernels and only the small
+kernels around them are persistent or fused: `STRATA_HIP_POST_SPLIT=1` (+3.5%) and `STRATA_HIP_FRONT_FUSE=1` (+2.7%),
+23 -> 11 kernels per layer. Decode ~106 -> ~119 tok/s over eight prompts, the same text. The whole account, with the
+micro-benchmarks, the harness (`ffn_half_bench`) and every measurement: `autoresearch/explore-261009-ceilings/mega/README.md`;
+the summary of all speeds: `FORK.md` ("Improvements and speeds").
+

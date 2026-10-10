@@ -52,6 +52,8 @@ the batch groups without pad rows, the server's pipeline groups and slot choice,
   default path, checked with the long-context suite; `STRATA_PREFILL_CPU_SHARE=1` = the CPU computes a short chunk's
   non-resident experts: 1K-token reads +13-16%, the first token after 1.7 s instead of 2.0; `STRATA_PA_FAST=1` = the
   prompt attention with single FP16 q and p, +2-3.5% more on long prompts).
+- since 10 Oct also `"STRATA_HIP_POST_SPLIT": "1"` and `"STRATA_HIP_FRONT_FUSE": "1"` (the FFN half of each layer as 11
+  kernels instead of 23, bit-exact: decode +3.5% and +2.7%), and the engine's PCIe copy kernel at 96 blocks (+6%).
 
 The engine is `engine/strata`, built from `main` (below). Measured on 08 Oct with the build of `main`:
 
@@ -82,6 +84,57 @@ parked conversation).
 a container, with the tuned settings as env vars: [docs/DOCKER_ROCM.md](docs/DOCKER_ROCM.md). Written 09 Oct, not yet
 built or run (to be tested on the PC). Its ROCm: setup.py's pinned ROCm 7 by default. Measured here against ROCm 7.9: 10.1 not
 recommended (GPU memory faults with the conversation cache, no speed gain), 7.14.1 stable but prompts ~40% slower.
+
+## Improvements and speeds (summary, 10 Oct)
+
+All on this PC (2x RX 7900 XTX, Ryzen 9 5950X, 128 GB, PCIe 3.0 x8, ROCm 7.9), IQ3_XXS, the production config.
+
+**Writing answers (decode)**
+
+| stage | speed |
+|---|---|
+| first install (05 Oct, the desktop card spilling memory) | 15 tok/s |
+| upstream as it was (06 Oct) | 58 tok/s (story + code) |
+| the fork before 10 Oct | ~97 tok/s story + code; ~106 over eight prompts |
+| **now (10 Oct)** | **~119 tok/s over eight prompts** (exact-text runs: code 120, story 97) |
+| 8 conversations at once (measured 07 Oct, before the 10 Oct changes) | ~185 tok/s in total (from 71) |
+
+The 10 Oct changes (HIP only, each bit-exact - the same text - and switchable):
+
+| change | gain |
+|---|---|
+| the PCIe copy kernel at 96 blocks instead of 384 (a 384-block launch cost 14-16 us per layer even when empty) | +6% |
+| post()'s small kernels as two persistent launches around the expert kernels (`STRATA_HIP_POST_SPLIT`) | +3.5% |
+| the expert pick, the CPU hand-off and the shared expert's small steps merged (`STRATA_HIP_FRONT_FUSE`) | +2.7% |
+
+Each layer's FFN half is now 11 GPU kernels instead of 23. Earlier decode gains (05-08 Oct): the cards' asynchronous
+hand-over (asynchronous commit, early launch) +36%; upstream's two-window pipeline, tuned, ~+8% then +3% (with the
+English draft vocabulary); the drafter's stream priority (no more slow engine starts).
+
+**Reading prompts**
+
+| prompt | before | now | first token |
+|---|---|---|---|
+| 1K | 500 tok/s | ~600 tok/s | 2.0 -> 1.7 s |
+| 4K | 915 tok/s | ~1,470 tok/s | 4.6 -> ~3 s |
+| 32K | 1,100 tok/s | ~3,000 tok/s | 25 -> ~12 s |
+| 118K | 1,120 tok/s | ~3,460 tok/s | 105 -> ~36 s |
+
+From five of upstream's opt-in switches, adopted after quality checks (`STRATA_PF_FUSED`, `STRATA_HIP_WMMA`,
+`STRATA_PA_FAST`, `STRATA_PREFILL_CPU_SHARE`, `STRATA_QFUSE`), and the 28.8 GB per-layer embedding table in RAM
+(`--ple-io ram`). The 10 Oct changes are decode only.
+
+**Quality**: no garbage or drift up to 128K (needles, facts, ~3K-token answers after 122K, 16K-token outputs, a 96K
+conversation, 4 x 64K at once, the conversation cache 9 of 9); every engine change of 10 Oct gave the same text in the
+exact-protocol runs and passed the server smoke 7 of 7.
+
+**Measured, not kept** (no gain here): ROCm 10.1 (crashes) and 7.14.1 (prompts 40% slower); the shared expert on a
+graph branch (-30%); draft-gate tweaks; smaller prompt chunks; a later layer split; device-side expert fetching; the
+second draft branch; the expert kernels inside one persistent launch (2x slower).
+
+Details: [autoresearch/explore-261009-ceilings/mega/README.md](autoresearch/explore-261009-ceilings/mega/README.md)
+(option B, 10 Oct), [docs/RESEARCH_2X_7900XTX.md](docs/RESEARCH_2X_7900XTX.md), the long-context results in
+[bench/results/2026-10-09-long-context-7900xtx](bench/results/2026-10-09-long-context-7900xtx/README.md).
 
 ## What was tested (summary, 09 Oct)
 
