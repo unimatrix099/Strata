@@ -3220,7 +3220,20 @@ bool Verifier::pl_launch(int T, const int32_t* tokens, int64_t pos0, std::string
         *(volatile uint32_t*) h_go_ = 1;
         std::atomic_thread_fence(std::memory_order_seq_cst);
     }
+    // STRATA_PL_LAUNCH_TIMING=1 (diagnostic): how long cudaGraphLaunch holds the pipeline thread, which also serves
+    // both stages' doorbells; every 500 launches per stage: the median, 90th percentile and largest, in us
+    static const bool lt_on = [] { const char* v = std::getenv("STRATA_PL_LAUNCH_TIMING"); return v && v[0] == '1'; }();
+    const Clock::time_point lt0 = Clock::now();
     const cudaError_t le = cudaGraphLaunch(exec_[T], cs_);
+    if (lt_on) {
+        lt_us_.push_back((float) (1e3 * ms_since(lt0)));
+        if (lt_us_.size() >= 500) {
+            std::sort(lt_us_.begin(), lt_us_.end());
+            std::fprintf(stderr, "strata verify: CUDA%d window launches (pipeline thread): median %.0f us, p90 %.0f, max %.0f "
+                                 "(500 launches)\n", device_, lt_us_[250], lt_us_[450], lt_us_.back());
+            lt_us_.clear();
+        }
+    }
     trace_ev("LAUNCHED", -1, -1, (int64_t) le);
     if (le != cudaSuccess) { err = std::string("verify: launch: ") + cudaGetErrorString(le); return false; }
     if (fl_prof_) cudaMemcpyAsync(prof_pin_, prof_, prof_h_.size() * 8, cudaMemcpyDeviceToHost, cs_);

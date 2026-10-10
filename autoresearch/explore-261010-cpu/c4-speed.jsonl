@@ -1,0 +1,12 @@
+{"run": "c4-0-1", "name": "4k", "prompt_n": 4224, "prompt_tps": 1435.5, "ttft_s": 2.9, "decode_tps": 103.6}
+{"run": "c4-0-1", "name": "16k", "prompt_n": 15288, "prompt_tps": 2571.2, "ttft_s": 5.9, "decode_tps": 105.7}
+{"run": "c4-0-1", "name": "32k", "prompt_n": 30072, "prompt_tps": 3055.0, "ttft_s": 9.8, "decode_tps": 100.2}
+{"run": "c4-0-2", "name": "4k", "prompt_n": 4224, "prompt_tps": 1435.8, "ttft_s": 2.9, "decode_tps": 101.3}
+{"run": "c4-0-2", "name": "16k", "prompt_n": 15288, "prompt_tps": 2571.0, "ttft_s": 5.9, "decode_tps": 106.3}
+{"run": "c4-0-2", "name": "32k", "prompt_n": 30072, "prompt_tps": 3044.4, "ttft_s": 9.9, "decode_tps": 100.5}
+{"run": "c4-1-1", "name": "4k", "prompt_n": 4224, "prompt_tps": 1399.3, "ttft_s": 3.0, "decode_tps": 99.2}
+{"run": "c4-1-1", "name": "16k", "prompt_n": 15288, "prompt_tps": 2534.4, "ttft_s": 6.0, "decode_tps": 98.3}
+{"run": "c4-1-1", "name": "32k", "prompt_n": 30072, "prompt_tps": 3014.5, "ttft_s": 10.0, "decode_tps": 105.8}
+{"run": "c4-1-2", "name": "4k", "prompt_n": 4224, "prompt_tps": 1401.1, "ttft_s": 3.0, "decode_tps": 103.6}
+{"run": "c4-1-2", "name": "16k", "prompt_n": 15288, "prompt_tps": 2364.1, "ttft_s": 6.5, "decode_tps": 105.8}
+{"run": "c4-1-2", "name": "32k", "prompt_n": 30072, "prompt_tps": 2998.9, "ttft_s": 10.0, "decode_tps": 101.2}

@@ -54,6 +54,7 @@ the batch groups without pad rows, the server's pipeline groups and slot choice,
   prompt attention with single FP16 q and p, +2-3.5% more on long prompts).
 - since 10 Oct also `"STRATA_HIP_POST_SPLIT": "1"` and `"STRATA_HIP_FRONT_FUSE": "1"` (the FFN half of each layer as 11
   kernels instead of 23, bit-exact: decode +3.5% and +2.7%), and the engine's PCIe copy kernel at 96 blocks (+6%).
+- since 10 Oct, late, `"STRATA_PREFILL_CPU_SHARE_MAX": "2048"`: the CPU share on prompt chunks below 2,048 tokens only (it was 3,072): 1K / 2K prompts keep +14.5% / +7.7%, 4K +1.5% (autoresearch/explore-261010-cpu).
 
 The engine is `engine/strata`, built from `main` (below). Measured on 08 Oct with the build of `main`:
 
@@ -222,6 +223,7 @@ card: the launch gaps equal the bandwidth floor), prompt reading at a third of t
 | 10 Oct | option B (a persistent layer kernel) investigated; a kernel trace found the PCIe copy kernel's 384-block launch costing 12-15 us in every layer for nothing: 96 blocks on HIP | decode +6% (eight prompts, 19 of 24 faster), same text |
 | 10 Oct | option B step 1: a persistent post() built (the kernel bodies as virtual blocks, bit-exact); the experts run slower inside it (42 against 20 us), so the head and tail are persistent and the experts stay kernels: `STRATA_HIP_POST_SPLIT=1` | decode +3.5% (eight prompts, 16 of 24 faster), same text; smoke 7/7 |
 | 10 Oct | option B step 2: the FFN half's front fused (`STRATA_HIP_FRONT_FUSE=1`) | decode +2.7% (six rounds, 31 of 48 faster), same text; smoke 7/7 |
+| 10 Oct | CPU side investigated: pool placement and task count (defaults best), the window launch on its own thread (-2.8%, dropped), the prompt CPU share's limit 3,072 -> 2,048 | 4K prompts +1.5%, 1-2K unchanged; decode: the CPU is not the bottleneck (0.2 CPU experts per layer) |
 
 ## Bringing in upstream's changes
 
