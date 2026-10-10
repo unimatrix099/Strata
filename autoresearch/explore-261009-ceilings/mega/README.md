@@ -260,6 +260,45 @@ What it says about the build:
 - The CPU's response time becomes the largest single item of a persistent FFN half. Making the pool answer sooner
   (or planning on the device when all of a group's experts are resident) is worth more once the half is persistent.
 
+## 10. Step 2: a persistent post(), built and measured (10 Oct)
+
+The kernel bodies became functions of a `VBlock` (the block's coordinates as a value; `src/kernels/cuda/vblock.cuh`):
+`native_gu_multi_kernel`, `native_down_multi_kernel`, `swiglu_q8_1_entries_kernel` (iq_kernels.cu) and
+`combine_gather` (moved to `moe_combine_gather.cuh`). The kernels are one-line wrappers passing the hardware's
+coordinates (the unchanged chain still times 149.9 us per layer in the harness). `native_expert_post_persistent`
+(iq_kernels.cu, HIP only) runs post() - wait A, the plan's copy, the VRAM experts' gate/up, SwiGLU and down, wait B,
+the PCIe share (fetch, rebase, its pass; all blocks skip it together when empty), wait C, the combine - with each
+body looping over its virtual grid and a self-resetting grid barrier between the steps. In the harness the output is
+**bitwise the chain's** (0 of 40,960 values differ, three runs, 8 layers, 2 rows).
+
+| post() as | per layer (FFN half) | kernels per layer |
+|---|---|---|
+| today's kernels | 149.9 us | 23 |
+| one persistent launch | 147.4-149.2 us | 11 |
+| **two persistent launches around the three expert kernels (head, tail)** | **131.8 us** | 15 |
+
+Inside one launch the expert bodies are slower than as kernels: gate/up 42.6 us against ~20, down 32.9 against
+13-20 (block 0's clock between barriers). Not occupancy: the persistent kernel takes 192 VGPRs (the down body's 176
+plus the loop), 192 blocks resident; capped at 96 VGPRs (`amdgpu_num_vgpr`) all 384 fit and gate/up still took 43 us;
+longer virtual blocks (fewer, each striding over more groups) took 60. The hardware's own scheduling of ~1,600 small
+blocks with no barriers beats a loop of them in resident blocks. So the experts stay kernels (they read at about the
+floor's speed already, ~35 us), and the small steps around them become two launches: the head (wait A + the plan,
+one block) and the tail (wait B, the PCIe share, wait C, the combine; 40 blocks).
+
+In the engine (`STRATA_HIP_POST_SPLIT=1`, verify.cpp post(): the doorbell path with the gathered combine, not the
+profiler, the device plan, the helper GPUs or the LFUSE gate), against the production engine with the fetch fix:
+
+| | before | after |
+|---|---|---|
+| exact protocol, story / code (text hashes 928818aa87 / 449d3d4c28 both) | 92.2 / 113.1 tok/s | 94.2 / 117.2 tok/s |
+| eight prompts, three alternating rounds | 114.1, 115.1, 114.1 | 113.9, 121.8, 118.0 (ratios 0.999, 1.063, 1.043; 16 of 24 faster) |
+| server smoke (facts, 4.5K prompt, Anthropic API, cancelled stream, two turns, sampled) | - | 7 of 7, no error lines |
+
+In production since 10 Oct (`engine/strata-before-postsplit`, `strata-iq3_xxs.json.before-postsplit` are the
+previous ones). Next: the front of the half (router GEMV, top-10, doorbell, the shared expert's 7 kernels) into the
+head - those bodies live in four other files (native_bf16.cu, native_router.cu, elementwise.cu, native_mmvq.cu /
+shared_expert.cu) and the shared expert's GEMVs are 128-thread blocks, two per persistent block.
+
 ## Files
 
 `launch_gap.cpp`, `phase_bw.cpp`, `any_order.cpp`, `any_order_graph.cpp`, `fork_cost.cpp` and their `*-dev1.txt`

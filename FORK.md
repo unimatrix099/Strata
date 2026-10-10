@@ -19,6 +19,7 @@ Every number here was measured on that PC. The full record, with every try and t
 | the pipelined draft chain's stream at the highest priority on ROCm too (before, it could share a hardware queue with card 2's windows) | `3e1b02c` | half the engine starts were ~10% slower (81-82 instead of 89-91 tok/s); now 6 of 6 fast |
 | setup: on several cards the `"parallel"` note gives the measured trade-off | `bc94d9d` | - |
 | HIP: the PCIe share's copy kernel launched with 96 blocks instead of 384 (a 384 x 256 launch - 48 CUs x 8 - costs 14-16 us on gfx1100 even when there is nothing to copy, which is nearly always; bit-exact, CUDA unchanged) | (this commit) | +3-5% decode (exact text), +6% over eight prompts |
+| `STRATA_HIP_POST_SPLIT=1` (HIP, opt-in; on in the production config): each layer's post() - wait A and the plan's copy, then wait B, the PCIe share, wait C and the combine - as two persistent launches around the three expert kernels (12 kernels -> 5 per layer; bit-exact: the same kernel bodies run as virtual blocks) | (this commit) | +2-4% decode (exact text), +3.5% over eight prompts |
 | `STRATA_MTP_TOP2=1`: a diagnostic, how often the drafter's second choice is the token a pipelined window missed (off by default) | `1ad25e4` | - |
 
 Kept in the fork's docs: [docs/RESEARCH_2X_7900XTX.md](docs/RESEARCH_2X_7900XTX.md) (the history), the desktop-card
@@ -165,6 +166,7 @@ card: the launch gaps equal the bandwidth floor), prompt reading at a third of t
 | 09 Oct | `STRATA_PA_FAST=1` in production after a check; a 64K resident KV measured (nothing) | long prompts +2-3.5% |
 | 09 Oct | `--ple-io ram` in production (the PLE table in RAM; exact) | 4K prompts +22-29%, 32K +9-10% |
 | 10 Oct | option B (a persistent layer kernel) investigated; a kernel trace found the PCIe copy kernel's 384-block launch costing 12-15 us in every layer for nothing: 96 blocks on HIP | decode +6% (eight prompts, 19 of 24 faster), same text |
+| 10 Oct | option B step 1: a persistent post() built (the kernel bodies as virtual blocks, bit-exact); the experts run slower inside it (42 against 20 us), so the head and tail are persistent and the experts stay kernels: `STRATA_HIP_POST_SPLIT=1` | decode +3.5% (eight prompts, 16 of 24 faster), same text; smoke 7/7 |
 
 ## Bringing in upstream's changes
 

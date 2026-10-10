@@ -77,4 +77,37 @@ void native_expert_set_mode(int mode, int phase);
 void iq_set_old_kernels(bool old);
 bool iq_old_kernels();
 
+
+/// The persistent FFN half, part 1: verify.cpp's post() for one layer group - wait A, the plan's copy from mapped
+/// memory, the VRAM experts (gate/up, SwiGLU + q8_1, down), wait B, the PCIe share (fetch, rebase, its pass), wait C
+/// and the combine (native_moe_combine_gather_multi) - as ONE launch of `blocks` resident blocks, bit for bit the
+/// kernels' values (the same kernel bodies over virtual grids, a grid barrier between the steps).  The plan layout is
+/// the Verifier's: counts | start | dst | tok | pad | ptr | ptr2 | start2 (`capx` entries, ptr at int32 `ptr_off`).
+/// HIP only; false (nothing launched) when the grouped launcher would take a path this does not cover.
+struct NativeExpertPostArgs {
+    const uint32_t* flag_a = nullptr; const uint32_t* flag_b = nullptr; const uint32_t* flag_c = nullptr;
+    uint32_t ring = 0;
+    const int32_t* m_plan = nullptr;     // the pool's plan, mapped host memory
+    int32_t* plan = nullptr;             // its device copy
+    int plan_i32 = 0;
+    long long capx = 0, ptr_off = 0;
+    long long cap = 0;                   // the call's entries (n * k), as native_expert_grouped's cap
+    const void* xq = nullptr;            // the rows' q8_1 image
+    void* scratch = nullptr;             // native_expert_scratch_bytes(cap, n_ff)
+    float* hit_out = nullptr;            // [cap][n_embd]: the GPU's expert rows
+    uint8_t* stage = nullptr; long long blob_bytes = 0;   // the PCIe share's staging
+    const float* cpu_rows = nullptr;     // the CPU's rows (mapped)
+    const float* weights = nullptr; const float* shared = nullptr; float* output = nullptr;
+    int k = 10, n_tok = 1;
+    unsigned* bar = nullptr;             // 2 words of device memory, zeroed once (the barrier resets itself)
+    int blocks = 0;
+    int gu_gx = 0, sw_gx = 0, d_gx = 0;  // set by the launcher
+    unsigned long long* stamps = nullptr; // (diagnostic) block 0's clock after each barrier, 16 slots
+    int part = 0;                        // 0 all of post(); 1 the head (wait A + the plan's copy); 2 the tail (wait B,
+                                         // the PCIe share, wait C, the combine): the VRAM experts' kernels between
+};
+bool native_expert_post_persistent(const NativeExpertPostArgs& args, const NativeExpertLayout& L, void* stream);
+/// The most blocks of the persistent kernel that are resident at once on this device (a larger grid would deadlock).
+int native_expert_post_max_blocks();
+
 }  // namespace strata::kernels

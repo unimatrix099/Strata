@@ -105,6 +105,10 @@ inline bool g_qdedup() { static const bool on = [] { const char* v = std::getenv
 // fork F4 (Eddoursul): 2-4 token dense projections read an interleaved copy of the q8_1 activations (bitwise the same
 // outputs); STRATA_MMVQ_IL=0 keeps native_mmvq's multi-column kernels
 inline bool g_mmvq_il() { static const bool on = [] { const char* v = std::getenv("STRATA_MMVQ_IL"); return v == nullptr || v[0] != '0'; }(); return on; }
+// STRATA_HIP_POST_SPLIT=1 (HIP, opt-in): post()'s small kernels as two persistent launches around the VRAM experts'
+// three kernels - the head (wait A, the plan's copy) and the tail (wait B, the PCIe share, wait C, the combine) -
+// bit for bit the kernels' values (iq_kernels.hpp native_expert_post_persistent; ffn_half_bench measures it)
+inline bool g_post_split() { static const bool on = [] { const char* v = std::getenv("STRATA_HIP_POST_SPLIT"); return v != nullptr && std::atoi(v) != 0; }(); return on; }
 inline bool g_qfuse() { static const bool on = [] { const char* v = std::getenv("STRATA_QFUSE"); return v != nullptr && std::atoi(v) != 0; }(); return on; }
 #define VDBG(...) do { if (g_dbg) { std::fprintf(stderr, "verify dbg: " __VA_ARGS__); std::fflush(stderr); } } while (0)
 
@@ -398,6 +402,7 @@ Verifier::~Verifier() {
     if (arena_b_) cudaFree(arena_b_);
     if (h_commitb_) cudaFreeHost(h_commitb_);
     if (qcnt_) cudaFree(qcnt_);
+    if (post_bar_) cudaFree(post_bar_);
     if (d_spec_) cudaFree(d_spec_);
     if (cs_ && cs_ != ext_stream_) cudaStreamDestroy(cs_);   // set_stream: the stage's stream, shared, not ours
     if (sh_cs_) cudaStreamDestroy(sh_cs_);
@@ -674,6 +679,12 @@ bool Verifier::init(const WeightTable& wt, const ModelGeometry& g, SessionState&
             cudaGetLastError();
             if (qcnt_) cudaFree(qcnt_);
             qcnt_ = nullptr;
+        }
+    }
+    if (g_post_split() && post_bar_ == nullptr) {   // STRATA_HIP_POST_SPLIT: the persistent tail's barrier (resets itself)
+        if (cudaMalloc((void**) &post_bar_, 8) != cudaSuccess || cudaMemset(post_bar_, 0, 8) != cudaSuccess) {
+            cudaGetLastError();
+            post_bar_ = nullptr;
         }
     }
     if (all_resident_ || device_plan_) {
@@ -1457,7 +1468,34 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                                hit_xs_ + (size_t) tb * (N / 32), hit_scratch_, dst_buf, cs);
             }
         };
-        if (ar_on()) {
+        // STRATA_HIP_POST_SPLIT: the doorbell path's head and tail as persistent launches (the combine included)
+        bool split_done = false;
+        if (!ar_on() && post_bar_ != nullptr && gather && !device_plan_ && !remote_opt_ && !prof_on_ && lay.native &&
+            sink_.pcie_mode == 2 && !sg_gated_[grp]) {
+            const auto& f = lay.fmt[(size_t) l];
+            const NativeExpertLayout Lx = native_expert_layout(f.gu_type, f.d_type, f.n_embd, f.n_ff);
+            const int64_t per = G == 2 ? kStagingBlobs / 2 : kStagingBlobs;
+            strata::kernels::NativeExpertPostArgs a;
+            a.flag_a = m_flagA_; a.flag_b = m_flagB_; a.flag_c = m_flag_; a.ring = ring;
+            a.m_plan = m_plan_ + (size_t) grp * (size_t) plan_i32_; a.plan = pl; a.plan_i32 = (int) plan_i32_;
+            a.capx = capx; a.ptr_off = ptr_off; a.cap = cap;
+            a.xq = nat_xq_ + (size_t) tb * (N / 32) * 36; a.scratch = hit_scratch_; a.hit_out = hit_out;
+            a.stage = staging_ + (size_t) (grp * per) * lay.max_blob; a.blob_bytes = (long long) lay.blob_bytes(l);
+            a.cpu_rows = m_ymiss_ + (size_t) tb * K * N; a.weights = w_ + tb * K; a.shared = shared_ + tb * N;
+            a.output = bo_ + tb * N; a.k = (int) K; a.n_tok = n; a.bar = post_bar_;
+            a.part = 1; a.blocks = 1;
+            if (strata::kernels::native_expert_post_persistent(a, Lx, cs)) {
+                grouped(p_ptr, p_start, p_counts, 0, hit_out);
+                a.part = 2; a.blocks = 40;
+                if (!strata::kernels::native_expert_post_persistent(a, Lx, cs)) {
+                    err = "verify: the persistent post() tail did not launch after its head";
+                    return false;
+                }
+                split_done = true;
+            }
+        }
+        if (split_done) {
+        } else if (ar_on()) {
             stamp(l, 19, grp);
             grouped(p_ptr, p_start, p_counts, 0, parts_out);
             stamp(l, 20, grp);
@@ -1510,7 +1548,8 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         if (sh_stream_on() && !prof_on_ && sh_cs_ != nullptr && ev_fork_ != nullptr && ev_join_ != nullptr) {
             cudaStreamWaitEvent(cs, ev_join_, 0);
         }
-        if (sg_gated_[grp]) {   // STRATA_LFUSE: the shared expert's gate was not applied: the combine applies it (all rows are hits)
+        if (split_done) {
+        } else if (sg_gated_[grp]) {   // STRATA_LFUSE: the shared expert's gate was not applied: the combine applies it (all rows are hits)
             try {
                 native_moe_combine_multi_hits_gated(parts_out, w_ + tb * K, shared_ + tb * N, sh_g_ + tb, bo_ + tb * N, N, K, n, cs);
             } catch (const std::exception& e) { err = "verify combine: " + std::string(e.what()); return false; }

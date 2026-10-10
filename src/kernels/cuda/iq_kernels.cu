@@ -4,6 +4,8 @@
 // (ggml/src/ggml-cuda/vecdotq.cuh, dequantize.cuh, quantize.cu at the commit in third_party/ggml/VERSION.txt;
 // MIT license, third_party/ggml/LICENSE).  The block structs and codebook grids come from its ggml-common.h,
 // included unchanged.
+#include "vblock.cuh"
+#include "moe_combine_gather.cuh"
 #include "strata/kernels/iq_kernels.hpp"
 #include "strata/kernels/dp4a.hpp"
 #include "strata/kernels/q8_1_finite.hpp"
@@ -1239,27 +1241,27 @@ __global__ void __launch_bounds__(256) native_gu_kernel(const unsigned long long
 constexpr int GRP_NC = 4;
 
 template<int TG, bool STAGE_GRID = kStageIqGrid<TG>, bool SUB16 = true>
-__global__ void __launch_bounds__(256) native_gu_multi_kernel(const unsigned long long* __restrict__ grp_ptr,
+__device__ __forceinline__ void native_gu_multi_kernel_body(const VBlock vb, const unsigned long long* __restrict__ grp_ptr,
                                                               const int32_t* __restrict__ grp_start,
                                                               const int32_t* __restrict__ n_groups,
                                                               const int32_t* __restrict__ ent_tok,
                                                               const block_q8_1* __restrict__ xq, NativeExpertLayout L,
                                                               float* __restrict__ gate, float* __restrict__ up) {
     const int ng = *n_groups;
-    if (blockIdx.y >= ng) return;
+    if (vb.by >= ng) return;
     STRATA_SHARED_ALIGN16_U32(s_grid_buf, IqGridWords<TG, STAGE_GRID>::value);
     const uint32_t* s_grid = stage_iq_grid<TG, STAGE_GRID>(s_grid_buf, threadIdx.x, 256);
     const int nb = (int) (L.n_embd / Fmt<TG>::qk), xb = (int) (L.n_embd / 32);
     if constexpr (SUB16) {
         if (xb == 80) {
             const int subwarp = threadIdx.x >> 4, t = threadIdx.x & 15;
-            const int row = blockIdx.x * 16 + subwarp;            // 0 .. 2*n_ff
+            const int row = vb.bx * 16 + subwarp;            // 0 .. 2*n_ff
             if (row >= 2 * L.n_ff) return;
             const bool is_up = row >= L.n_ff;
             const int r = is_up ? row - (int) L.n_ff : row;
             const size_t w_off = (is_up ? L.up_off : 0) + (size_t) r * L.gu_row;
             float* dst = is_up ? up : gate;
-            for (int g = blockIdx.y; g < ng; g += gridDim.y) {
+            for (int g = vb.by; g < ng; g += vb.gy) {
                 const uint8_t* wr = (const uint8_t*) grp_ptr[g] + w_off;
                 const int e0 = grp_start[g], e1 = grp_start[g + 1];
                 for (int e = e0; e < e1; e += GRP_NC) {
@@ -1291,13 +1293,13 @@ __global__ void __launch_bounds__(256) native_gu_multi_kernel(const unsigned lon
         }
     }
     const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
-    const int row = blockIdx.x * GU_ROWS + warp;             // 0 .. 2*n_ff
+    const int row = vb.bx * GU_ROWS + warp;             // 0 .. 2*n_ff
     if (row >= 2 * L.n_ff) return;
     const bool is_up = row >= L.n_ff;
     const int r = is_up ? row - (int) L.n_ff : row;
     const size_t w_off = (is_up ? L.up_off : 0) + (size_t) r * L.gu_row;
     float* dst = is_up ? up : gate;
-    for (int g = blockIdx.y; g < ng; g += gridDim.y) {   // the group stride, as native_gu_kernel
+    for (int g = vb.by; g < ng; g += vb.gy) {   // the group stride, as native_gu_kernel
         const uint8_t* wr = (const uint8_t*) grp_ptr[g] + w_off;
         const int e0 = grp_start[g], e1 = grp_start[g + 1];
         for (int e = e0; e < e1; e += GRP_NC) {
@@ -1325,6 +1327,15 @@ __global__ void __launch_bounds__(256) native_gu_multi_kernel(const unsigned lon
             }
         }
     }
+}
+template<int TG, bool STAGE_GRID, bool SUB16>
+__global__ void __launch_bounds__(256) native_gu_multi_kernel(const unsigned long long* __restrict__ grp_ptr,
+                                                              const int32_t* __restrict__ grp_start,
+                                                              const int32_t* __restrict__ n_groups,
+                                                              const int32_t* __restrict__ ent_tok,
+                                                              const block_q8_1* __restrict__ xq, NativeExpertLayout L,
+                                                              float* __restrict__ gate, float* __restrict__ up) {
+    native_gu_multi_kernel_body<TG, STAGE_GRID, SUB16>(hw_vblock(), grp_ptr, grp_start, n_groups, ent_tok, xq, L, gate, up);
 }
 
 __global__ void swiglu_entries_kernel(const float* __restrict__ gate, const float* __restrict__ up, float* __restrict__ h,
@@ -1360,24 +1371,24 @@ __global__ void __launch_bounds__(256) native_down_kernel(const unsigned long lo
 
 // native_down_kernel with the entries taken GRP_NC at a time
 template<int TD, bool SUB_DOWN = true>
-__global__ void __launch_bounds__(256) native_down_multi_kernel(const unsigned long long* __restrict__ grp_ptr,
+__device__ __forceinline__ void native_down_multi_kernel_body(const VBlock vb, const unsigned long long* __restrict__ grp_ptr,
                                                                 const int32_t* __restrict__ grp_start,
                                                                 const int32_t* __restrict__ n_groups,
                                                                 const int32_t* __restrict__ ent_dst,
                                                                 const block_q8_1* __restrict__ hq, NativeExpertLayout L,
                                                                 float* __restrict__ out) {
     const int ng = *n_groups;
-    if (blockIdx.y >= ng) return;
+    if (vb.by >= ng) return;
     __shared__ uint32_t s_hq_buf[GRP_NC * 20 * 9];
     const int nb = (int) (L.n_ff / Fmt<TD>::qk), hb = (int) (L.n_ff / 32);
     if constexpr (SUB_DOWN && TD == 20) {
         if (hb == 20) {
-            const int r = blockIdx.x * 32 + (threadIdx.x >> 3);
+            const int r = vb.bx * 32 + (threadIdx.x >> 3);
             const int t = threadIdx.x & 7;
             const bool valid_r = (r < L.n_embd);
             const size_t w_off = L.down_off + (size_t) (valid_r ? r : 0) * L.d_row;
             const block_q8_1* s_hq = reinterpret_cast<const block_q8_1*>(s_hq_buf);
-            for (int g = blockIdx.y; g < ng; g += gridDim.y) {
+            for (int g = vb.by; g < ng; g += vb.gy) {
                 const uint8_t* wr = (const uint8_t*) grp_ptr[g] + w_off;
                 const int e0 = grp_start[g], e1 = grp_start[g + 1];
                 for (int e = e0; e < e1; e += GRP_NC) {
@@ -1416,12 +1427,12 @@ __global__ void __launch_bounds__(256) native_down_multi_kernel(const unsigned l
         }
     } else if constexpr (SUB_DOWN && TD == 42) {
         if (hb == 20) {
-            const int r = blockIdx.x * 16 + (threadIdx.x >> 4);
+            const int r = vb.bx * 16 + (threadIdx.x >> 4);
             const int t = threadIdx.x & 15;
             const bool valid_r = (r < L.n_embd);
             const size_t w_off = L.down_off + (size_t) (valid_r ? r : 0) * L.d_row;
             const block_q8_1* s_hq = reinterpret_cast<const block_q8_1*>(s_hq_buf);
-            for (int g = blockIdx.y; g < ng; g += gridDim.y) {
+            for (int g = vb.by; g < ng; g += vb.gy) {
                 const uint8_t* wr = (const uint8_t*) grp_ptr[g] + w_off;
                 const int e0 = grp_start[g], e1 = grp_start[g + 1];
                 for (int e = e0; e < e1; e += GRP_NC) {
@@ -1460,10 +1471,10 @@ __global__ void __launch_bounds__(256) native_down_multi_kernel(const unsigned l
         }
     }
     const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
-    const int r = blockIdx.x * 8 + warp;
+    const int r = vb.bx * 8 + warp;
     const bool valid_r = (r < L.n_embd);
     const size_t w_off = L.down_off + (size_t) (valid_r ? r : 0) * L.d_row;
-    for (int g = blockIdx.y; g < ng; g += gridDim.y) {   // the group stride, as native_gu_kernel
+    for (int g = vb.by; g < ng; g += vb.gy) {   // the group stride, as native_gu_kernel
         const uint8_t* wr = (const uint8_t*) grp_ptr[g] + w_off;
         const int e0 = grp_start[g], e1 = grp_start[g + 1];
         if (hb == 20) {
@@ -1513,6 +1524,15 @@ __global__ void __launch_bounds__(256) native_down_multi_kernel(const unsigned l
         }
     }
 }
+template<int TD, bool SUB_DOWN>
+__global__ void __launch_bounds__(256) native_down_multi_kernel(const unsigned long long* __restrict__ grp_ptr,
+                                                                const int32_t* __restrict__ grp_start,
+                                                                const int32_t* __restrict__ n_groups,
+                                                                const int32_t* __restrict__ ent_dst,
+                                                                const block_q8_1* __restrict__ hq, NativeExpertLayout L,
+                                                                float* __restrict__ out) {
+    native_down_multi_kernel_body<TD, SUB_DOWN>(hw_vblock(), grp_ptr, grp_start, n_groups, ent_dst, hq, L, out);
+}
 
 // ---------------------------------------------------------------- q8_1 (quantize.cu)
 // value i of a q8_1 row set (the warp holds block i / 32, lane = i % 32)
@@ -1543,7 +1563,7 @@ __global__ void quantize_q8_1_kernel(const float* __restrict__ x, block_q8_1* __
 // kernels': the SwiGLU product is rounded on its own - it must not contract into the first add of q8_1_store's block
 // sum, as it could not when it went through memory (CUDA: __fmul_rn; HIP's __fmul_rn is a plain product, so there
 // the product is written here under contract(off)) - then q8_1_store unchanged: the same blocks, bit for bit.
-__global__ void __launch_bounds__(256) swiglu_q8_1_entries_kernel(const float* __restrict__ gate,
+__device__ __forceinline__ void swiglu_q8_1_entries_kernel_body(const VBlock vb, const float* __restrict__ gate,
                                                                   const float* __restrict__ up,
                                                                   const int32_t* __restrict__ grp_start,
                                                                   const int32_t* __restrict__ n_groups, int n_ff,
@@ -1552,8 +1572,8 @@ __global__ void __launch_bounds__(256) swiglu_q8_1_entries_kernel(const float* _
 #pragma clang fp contract(off)
 #endif
     const long long lo = (long long) grp_start[0] * n_ff, hi = (long long) grp_start[*n_groups] * n_ff;
-    for (long long i = lo + (long long) blockIdx.x * blockDim.x + threadIdx.x; i < hi;
-         i += (long long) gridDim.x * blockDim.x) {
+    for (long long i = lo + (long long) vb.bx * blockDim.x + threadIdx.x; i < hi;
+         i += (long long) vb.gx * blockDim.x) {
         const float g = gate[i];
 #if defined(__HIPCC__)
         const float h = (g / (1.0f + __expf(-g))) * up[i];
@@ -1562,6 +1582,13 @@ __global__ void __launch_bounds__(256) swiglu_q8_1_entries_kernel(const float* _
 #endif
         q8_1_store(h, hq, i);
     }
+}
+__global__ void __launch_bounds__(256) swiglu_q8_1_entries_kernel(const float* __restrict__ gate,
+                                                                  const float* __restrict__ up,
+                                                                  const int32_t* __restrict__ grp_start,
+                                                                  const int32_t* __restrict__ n_groups, int n_ff,
+                                                                  block_q8_1* __restrict__ hq) {
+    swiglu_q8_1_entries_kernel_body(hw_vblock(), gate, up, grp_start, n_groups, n_ff, hq);
 }
 
 // ---------------------------------------------------------------- dequant (dequantize.cuh)
@@ -3609,5 +3636,178 @@ void native_expert_grouped(const NativeExpertLayout& L, const unsigned long long
     }
     check("native_expert_grouped/down");
 }
+
+
+#if defined(STRATA_USE_HIP)
+// ---------------------------------------------------------------- the persistent FFN half, part 1: post()
+// verify.cpp's post() for one layer group (wait A, the plan's copy, the VRAM experts' gate/up, SwiGLU and down, wait B,
+// the PCIe share's fetch, rebase and its three kernels, wait C, the combine) as ONE launch of `blocks` resident blocks:
+// each step's kernel body (the same code as its own kernel, written against VBlock) runs over its own grid of virtual
+// blocks, a grid barrier between the steps.  The values are the kernels': a body's results do not depend on which
+// physical block runs a virtual one, and the expert bodies' do not depend on gridDim.y (their group stride).
+namespace {
+struct PostBar { unsigned count, gen; };
+
+// every block arrives; the last one resets the count and opens the next generation.  All threads then acquire at agent
+// scope (each wave invalidates its own L0, so data another block wrote in the step before is read fresh).
+__device__ __forceinline__ void post_grid_sync(PostBar* bar, unsigned long long* stamps = nullptr, int* si = nullptr) {
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        const unsigned g = __hip_atomic_load(&bar->gen, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
+        __threadfence();
+        if (atomicAdd(&bar->count, 1u) == gridDim.x - 1) {
+            __hip_atomic_store(&bar->count, 0u, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_AGENT);
+            __hip_atomic_fetch_add(&bar->gen, 1u, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_AGENT);
+        } else {
+            while (__hip_atomic_load(&bar->gen, __ATOMIC_ACQUIRE, __HIP_MEMORY_SCOPE_AGENT) == g) __builtin_amdgcn_s_sleep(1);
+        }
+    }
+    __syncthreads();
+    __builtin_amdgcn_fence(__ATOMIC_ACQUIRE, "agent");
+    if (stamps && blockIdx.x == 0 && threadIdx.x == 0 && *si < 16) stamps[(*si)++] = wall_clock64();
+}
+__device__ __forceinline__ void post_spin(const uint32_t* flag, uint32_t value) {   // wait_flag_ge_kernel's loop
+    while (*(const volatile uint32_t*) flag < value) {}
+    __threadfence_system();
+}
+// one step: the virtual grid (gx, gy) spread over the physical blocks
+template<typename F>
+__device__ __forceinline__ void post_virtual(int gx, int gy, F&& body) {
+    const int total = gx * gy;
+    for (int v = (int) blockIdx.x; v < total; v += (int) gridDim.x) {
+        body(VBlock{v % gx, v / gx, gx, gy});
+        __syncthreads();   // the bodies stage into shared memory: the next virtual block must not overwrite it early
+    }
+}
+
+#if defined(STRATA_POST_VGPR_CAP)
+#define STRATA_POST_VGPR __attribute__((amdgpu_num_vgpr(STRATA_POST_VGPR_CAP)))
+#else
+#define STRATA_POST_VGPR
+#endif
+template<int TG, bool STAGE, int TD>
+__global__ void __launch_bounds__(256) STRATA_POST_VGPR expert_post_persistent(NativeExpertPostArgs a, NativeExpertLayout L) {
+    PostBar* bar = (PostBar*) a.bar;
+    int si = 0;
+    if (a.stamps && blockIdx.x == 0 && threadIdx.x == 0) a.stamps[si++] = wall_clock64();
+    int32_t* pl = a.plan;
+    // wait A, then the plan into device memory (copy_i32_from_mapped)
+    if (a.part != 2 && blockIdx.x == 0) {
+        if (threadIdx.x == 0) post_spin(a.flag_a, a.ring);
+        __syncthreads();
+        for (int i = threadIdx.x; i < a.plan_i32; i += blockDim.x) pl[i] = ((const volatile int32_t*) a.m_plan)[i];
+    }
+    if (a.part == 1) return;   // the head only: the VRAM experts run as their own kernels after it
+    if (a.part != 2) post_grid_sync(bar, a.stamps, &si);
+    const int32_t* p_counts = pl;
+    const int32_t* p_start = pl + 4;
+    const int32_t* p_dst = p_start + a.capx + 1;
+    const int32_t* p_tok = p_dst + a.capx;
+    unsigned long long* p_ptr = (unsigned long long*) (pl + a.ptr_off);
+    unsigned long long* p_ptr2 = p_ptr + a.capx;
+    const int32_t* p_start2 = pl + a.ptr_off + 4 * a.capx;
+    const size_t f = (size_t) a.cap * (size_t) L.n_ff * sizeof(float), fa = (f + 255) & ~(size_t) 255;
+    float* gate = (float*) a.scratch;
+    float* up = (float*) ((uint8_t*) a.scratch + fa);
+    block_q8_1* hq = (block_q8_1*) ((uint8_t*) a.scratch + 3 * fa);
+    const block_q8_1* X = (const block_q8_1*) a.xq;
+    // the experts of one pass (the VRAM groups, or the PCIe share's): gate/up, SwiGLU + q8_1, down
+    auto pass = [&](const unsigned long long* gp, const int32_t* gs, const int32_t* gn) {
+        const int ng = *gn;
+        if (ng <= 0) return;   // the same value in every block: they skip together
+        // block rows per step: about one virtual block per physical one, each striding over its share of the groups
+        // (gridDim.y is the bodies' group stride; their values do not depend on it), so a block stages its codebook
+        // once and reads several experts' rows back to back instead of a chain of tiny virtual blocks
+        // (one virtual block per group: ~8 per physical block; the bodies' group stride makes this a free choice -
+        // fewer, longer virtual blocks measured slower: 60 against 42 us for the gate/up step)
+        const int gy_gu = ng, gy_d = ng;
+        post_virtual(a.gu_gx, gy_gu, [&](VBlock vb) {
+            native_gu_multi_kernel_body<TG, STAGE, true>(vb, gp, gs, gn, p_tok, X, L, gate, up);
+        });
+        post_grid_sync(bar, a.stamps, &si);
+        post_virtual(a.sw_gx, 1, [&](VBlock vb) {
+            swiglu_q8_1_entries_kernel_body(vb, gate, up, gs, gn, (int) L.n_ff, hq);
+        });
+        post_grid_sync(bar, a.stamps, &si);
+        post_virtual(a.d_gx, gy_d, [&](VBlock vb) {
+            native_down_multi_kernel_body<TD, true>(vb, gp, gs, gn, p_dst, hq, L, a.hit_out);
+        });
+        post_grid_sync(bar, a.stamps, &si);
+    };
+    if (a.part != 2) pass(p_ptr, p_start, p_counts);
+    // wait B: the PCIe share (nearly always empty) is ready to be fetched
+    if (blockIdx.x == 0 && threadIdx.x == 0) post_spin(a.flag_b, a.ring);
+    post_grid_sync(bar, a.stamps, &si);
+    const int n2 = p_counts[2];
+    if (n2 > 0) {   // fetch_blobs, rebase_ptrs, then the pass over the staged copies
+        const long long per = a.blob_bytes / 16, total = (long long) n2 * per;
+        const long long stride = (long long) gridDim.x * blockDim.x;
+        for (long long i = (long long) blockIdx.x * blockDim.x + threadIdx.x; i < total; i += stride) {
+            const long long k = i / per, off = i - k * per;
+            ((uint4*) a.stage)[i] = ((const uint4*) p_ptr2[k])[off];
+        }
+        post_grid_sync(bar, a.stamps, &si);
+        if (blockIdx.x == 0 && (int) threadIdx.x < n2)
+            p_ptr2[threadIdx.x] = (unsigned long long) a.stage + (unsigned long long) threadIdx.x * (unsigned long long) a.blob_bytes;
+        post_grid_sync(bar, a.stamps, &si);
+        pass(p_ptr2, p_start2, p_counts + 2);
+    }
+    // wait C: the CPU's rows are in the mapped buffer; then the combine (combine_gather)
+    if (blockIdx.x == 0 && threadIdx.x == 0) post_spin(a.flag_c, a.ring);
+    post_grid_sync(bar, a.stamps, &si);
+    post_virtual((int) ((L.n_embd + 255) / 256), a.n_tok, [&](VBlock vb) {
+        combine_gather_body(vb, a.cpu_rows, a.hit_out, p_dst, p_counts + 1, a.weights, a.shared, a.output, L.n_embd, a.k);
+    });
+    if (a.stamps) post_grid_sync(bar, a.stamps, &si);   // (diagnostic: the combine's end)
+}
+}  // namespace
+
+bool native_expert_post_persistent(const NativeExpertPostArgs& args, const NativeExpertLayout& L, void* stream) {
+    // the kernel bodies the grouped launcher would pick (native_expert_grouped's default path), else the caller keeps
+    // the kernels: the AMD layouts, V1, the old / no-SUB16 kernels and the S26/S27 paths are not covered
+    if (args.blocks <= 0 || g_old_kernels || g_no_sub16_gu || g_grouped_v1 || g_exp_phase != 0 || L.n_ff != 640 ||
+        L.n_embd != 2560 || args.k != 10)
+        return false;
+#if STRATA_EXP_LAYOUTS
+    if (exp_mode() != 0) return false;
+#endif
+    {
+        static const bool v2 = [] { const char* v = std::getenv("STRATA_EXPERT_V2"); return v && v[0] == '1'; }();
+        static const bool v2k = [] { const char* v = std::getenv("STRATA_EXPERT_V2K"); return v && v[0] == '1'; }();
+        if (v2 || v2k) return false;
+    }
+    NativeExpertPostArgs a = args;
+    a.gu_gx = (int) ((2 * L.n_ff + 15) / 16);                     // gu_rows 16 (the SUB16 path; the types below)
+    a.sw_gx = (int) (((long long) a.cap * L.n_ff + 255) / 256);   // the launcher's SwiGLU grid
+    const int d_rows = L.d_type == 20 ? 32 : 16;                 // n_ff 640: 32 rows for IQ4_NL, 16 for Q2_0
+    a.d_gx = (int) ((L.n_embd + d_rows - 1) / d_rows);
+    cudaStream_t s = (cudaStream_t) stream;
+#define STRATA_POST(TG, TD)                                                                                           \
+    if (L.gu_type == TG && L.d_type == TD) {                                                                          \
+        if (kStageIqGrid<TG> && g_stage_grid)                                                                         \
+            expert_post_persistent<TG, kStageIqGrid<TG>, TD><<<a.blocks, 256, 0, s>>>(a, L);                          \
+        else expert_post_persistent<TG, false, TD><<<a.blocks, 256, 0, s>>>(a, L);                                    \
+        check("native_expert_post_persistent");                                                                       \
+        return true;                                                                                                  \
+    }
+    STRATA_POST(16, 20) STRATA_POST(16, 42) STRATA_POST(17, 20) STRATA_POST(17, 42) STRATA_POST(18, 20)
+    STRATA_POST(18, 42) STRATA_POST(21, 20) STRATA_POST(21, 42) STRATA_POST(22, 20) STRATA_POST(22, 42)
+#undef STRATA_POST
+    return false;
+}
+
+int native_expert_post_max_blocks() {
+    int per_cu = 0, dev = 0;
+    cudaDeviceProp prop;
+    if (cudaGetDevice(&dev) != cudaSuccess || cudaGetDeviceProperties(&prop, dev) != cudaSuccess) return 0;
+    // the heaviest instantiation (IQ2_XS gate/up with its staged grid, IQ4_NL down) bounds the others
+    if (hipOccupancyMaxActiveBlocksPerMultiprocessor(&per_cu, expert_post_persistent<17, true, 20>, 256, 0) != hipSuccess)
+        return 0;
+    return per_cu * prop.multiProcessorCount;
+}
+#else   // CUDA keeps the kernels (the persistent FFN half is HIP only)
+bool native_expert_post_persistent(const NativeExpertPostArgs&, const NativeExpertLayout&, void*) { return false; }
+int native_expert_post_max_blocks() { return 0; }
+#endif
 
 }  // namespace strata::kernels
