@@ -4,6 +4,23 @@ Strata answers Anthropic's Messages API (`POST /v1/messages`: streaming, tool us
 Claude Code can use the local model as its provider. Measured on 2x RX 7900 XTX with Swift 1.5 IQ3_S, Claude Code
 2.1.296, 11 Oct 2026.
 
+## In short: what was already there, and what this fork added
+
+**The Anthropic-compatible API is upstream Strata's** (Claude Code support since 0.1.17): `POST /v1/messages` with
+streaming, tool use, thinking blocks and images; the prompt cache that pins Claude Code's per-request billing stamp so
+its long system prompt is read once and reused; and the server keys for agents (`fit_max_tokens`,
+`tool_call_recovery`). Upstream's docs gave the connection variables in one line.
+
+**Added here on 11 Oct:**
+1. The setup tested end to end: three real Claude Code sessions on the production model (Swift 1.5 IQ3_S), every
+   result checked by running its tests by hand (below).
+2. The settings that matter, checked against the installed Claude Code - above all `CLAUDE_CODE_MAX_CONTEXT_TOKENS`
+   set to the server's context, so Claude Code compacts the conversation before the server would refuse it.
+3. `tools/strata-claude.sh`: starts Claude Code with the local server for that session only; a plain `claude` keeps
+   using Anthropic.
+4. `fit_max_tokens` and `tool_call_recovery` on in the production config.
+5. This guide (linked from the README and FORK.md).
+
 ## Start it
 
 ```
