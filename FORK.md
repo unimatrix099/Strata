@@ -34,6 +34,13 @@ the batch groups without pad rows, the server's pipeline groups and slot choice,
 
 ## The production setup
 
+**Since 11 Oct the production model is Swift 1.5 IQ3_S** (UkisAI's fine-tune of Qwen3.8-Flash-Next that thinks
+shorter; installed by hand, setup does not list it): `run-swift-iq3_s.sh` with `strata-swift-iq3_s-tuned.json` - the
+same tuning as below with Swift's files (the per-layer embedding table is in its shard 1). On 79 known-answer items it
+scored 78 against IQ3_XXS's 75 and finished the hard ones 32% sooner (37% fewer tokens); it decodes ~4-8% and reads
+prompts above 2K 16-25% slower than IQ3_XXS (bench/results/2026-10-10-iq3s-vs-iq3xxs-7900xtx). Back to IQ3_XXS:
+`run-iq3_xxs.sh` (the config below is unchanged).
+
 `strata-iq3_xxs.json` (made by `setup.py`, then tuned):
 
 - `--gpus 1,0`: the card without the desktop runs the first stage; `--vram-reserve-mib 700 --vram-reserve-later-mib
@@ -224,6 +231,7 @@ card: the launch gaps equal the bandwidth floor), prompt reading at a third of t
 | 10 Oct | option B step 1: a persistent post() built (the kernel bodies as virtual blocks, bit-exact); the experts run slower inside it (42 against 20 us), so the head and tail are persistent and the experts stay kernels: `STRATA_HIP_POST_SPLIT=1` | decode +3.5% (eight prompts, 16 of 24 faster), same text; smoke 7/7 |
 | 10 Oct | option B step 2: the FFN half's front fused (`STRATA_HIP_FRONT_FUSE=1`) | decode +2.7% (six rounds, 31 of 48 faster), same text; smoke 7/7 |
 | 10 Oct | CPU side investigated: pool placement and task count (defaults best), the window launch on its own thread (-2.8%, dropped), the prompt CPU share's limit 3,072 -> 2,048 | 4K prompts +1.5%, 1-2K unchanged; decode: the CPU is not the bottleneck (0.2 CPU experts per layer) |
+| 10-11 Oct | IQ3_S and Swift 1.5 IQ3_S compared with IQ3_XXS (speed, 79 known-answer items); production switched to Swift 1.5 IQ3_S | 78 / 76 / 75 of 79; Swift 37% fewer tokens on hard problems; smoke 7/7 |
 
 ## Bringing in upstream's changes
 
