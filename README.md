@@ -7,6 +7,9 @@
 > **Docker on AMD GPUs (Linux), one command:** `./docker/install.sh` - it detects the GPUs, the card order, the device
 > groups, the RAM (it picks the model) and an existing `Strata-data` folder, writes `.env`, builds the image, starts
 > Strata and waits until the API answers at http://127.0.0.1:8080/v1. Guide: [docs/DOCKER_ROCM.md](docs/DOCKER_ROCM.md).
+>
+> **Claude Code on the local model:** `tools/strata-claude.sh` starts Claude Code with Strata as its provider for that
+> session (plain `claude` keeps using Anthropic). Settings and measurements: [docs/CLAUDE_CODE.md](docs/CLAUDE_CODE.md).
 
 <p align="center"><b>Run a 125-billion-parameter AI model on your own gaming PC</b><br>
 NVIDIA or AMD graphics card (12 GB or more) · Windows or Linux · free and open source</p>

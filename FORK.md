@@ -136,6 +136,11 @@ the same engine and tuning, 79 known-answer items:
   writes on this PC is identical to the production config; the image itself not yet built (no Docker here).
 - Docs: README's Docker pointer, FORK.md, MODELS / DETAILS / AI_SETUP (Swift IQ3_S); `.env` ignored by git.
 
+**Claude Code on the local model (11 Oct)**: three headless sessions (bug fix, new functions with tests, a CLI with
+tests) all correct in 22-60 s; the system prompt (~26,700 tokens) is cached across turns and sessions. `tools/strata-claude.sh`
+sets it up per session; the server's `fit_max_tokens` and `tool_call_recovery` are on in production:
+[docs/CLAUDE_CODE.md](docs/CLAUDE_CODE.md).
+
 **Incidents:** setup without `--data-dir` moved the data folder into the repository (its default, the folder above,
 is not writable here): the files were moved back and one corrupted partial download deleted; the production config
 now runs an identical engine copy (`engine/strata-prod-1010`) so setup cannot overwrite the running binary.
