@@ -96,6 +96,53 @@ production config); the image itself has not been built here (no Docker in this 
 pinned ROCm 7 by default. Measured here against ROCm 7.9: 10.1 not recommended (GPU memory faults with the
 conversation cache, no speed gain), 7.14.1 stable but prompts ~40% slower.
 
+## What was done 10-11 Oct (summary)
+
+All on this PC (2x RX 7900 XTX, Ryzen 9 5950X, 128 GB). Every engine change kept the text the same as before (exact-text
+runs) and passed the server smoke test.
+
+**Decode speed (10 Oct)** - details: [autoresearch/explore-261009-ceilings/mega/README.md](autoresearch/explore-261009-ceilings/mega/README.md)
+
+| change | gain |
+|---|---|
+| the PCIe copy kernel at 96 blocks instead of 384 (a 384-block launch cost 14-16 us per layer even with nothing to copy) | +6% |
+| post()'s small kernels as two persistent launches around the expert kernels (`STRATA_HIP_POST_SPLIT`) | +3.5% |
+| the expert pick, the CPU hand-off and the shared expert's small steps fused (`STRATA_HIP_FRONT_FUSE`) | +2.7% |
+
+Decode over eight prompts ~106 -> ~119 tok/s (IQ3_XXS); each layer's FFN half 23 -> 11 kernels. Measured and dropped:
+the expert kernels inside one persistent launch (2x slower), graph branches (-26..-30%), a first-draft rule for the
+drafter, the window launch on its own thread (-2.8%).
+
+**The CPU side (10 Oct)** - [autoresearch/explore-261010-cpu](autoresearch/explore-261010-cpu/README.md): the CPU is no
+longer the bottleneck (0.2 CPU experts per layer per window: 4 layers in 5 need none); the pool's defaults are best.
+Kept: the prompt CPU share on chunks below 2,048 tokens only (4K prompts +1.5%, 1-2K unchanged).
+
+**Three models compared (10 Oct)** - [bench/results/2026-10-10-iq3s-vs-iq3xxs-7900xtx](bench/results/2026-10-10-iq3s-vs-iq3xxs-7900xtx/README.md),
+the same engine and tuning, 79 known-answer items:
+
+| | IQ3_XXS | IQ3_S | Swift 1.5 IQ3_S |
+|---|---|---|---|
+| items right | 75 | 76 | **78** |
+| tokens on the hard set | 119,926 | -21% | **-37%** |
+| time on the hard set | 839 s | 700 s | **570 s** |
+| decode | - | -4% | ~-8% |
+| prompts above 2K | - | -16..-25% | -16..-25% |
+
+**11 Oct**
+- Production switched to **Swift 1.5 IQ3_S** (`run-swift-iq3_s.sh`, smoke 7/7); IQ3_XXS kept (`run-iq3_xxs.sh`).
+- The original IQ3_S deleted (64 -> 117 GB free; IQ3_XXS's shared shard 2 untouched).
+- `setup.py` installs Swift 1.5 IQ3_S (the repository pin moved to the commit that added it; its other files unchanged).
+- **One-command Docker install**: `./docker/install.sh` - [docs/DOCKER_ROCM.md](docs/DOCKER_ROCM.md); the `.env` it
+  writes on this PC is identical to the production config; the image itself not yet built (no Docker here).
+- Docs: README's Docker pointer, FORK.md, MODELS / DETAILS / AI_SETUP (Swift IQ3_S); `.env` ignored by git.
+
+**Incidents:** setup without `--data-dir` moved the data folder into the repository (its default, the folder above,
+is not writable here): the files were moved back and one corrupted partial download deleted; the production config
+now runs an identical engine copy (`engine/strata-prod-1010`) so setup cannot overwrite the running binary.
+
+**Open:** the first `./docker/install.sh` on the host; the host-only settings (`performance` governor,
+`ulimit -l unlimited`); option C (one-chunk prompts split across both cards) not started.
+
 ## Improvements and speeds (summary, 10 Oct)
 
 All on this PC (2x RX 7900 XTX, Ryzen 9 5950X, 128 GB, PCIe 3.0 x8, ROCm 7.9), IQ3_XXS, the production config.
