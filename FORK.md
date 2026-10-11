@@ -88,10 +88,13 @@ parked conversation).
 
 ## Docker (AMD)
 
-`Dockerfile.rocm` + `docker-compose.rocm.yml` + one `.env` file (`docker/rocm.env.example`) run the production setup in
-a container, with the tuned settings as env vars: [docs/DOCKER_ROCM.md](docs/DOCKER_ROCM.md). Written 09 Oct, not yet
-built or run (to be tested on the PC). Its ROCm: setup.py's pinned ROCm 7 by default. Measured here against ROCm 7.9: 10.1 not
-recommended (GPU memory faults with the conversation cache, no speed gain), 7.14.1 stable but prompts ~40% slower.
+One command: `./docker/install.sh` - it detects the GPUs (architecture, which card drives the desktop), the device
+groups, the RAM (it picks the model) and an existing `Strata-data` folder, writes `.env`, builds the image, starts it
+and waits until the API answers. The image runs the production setup (Swift 1.5 IQ3_S, every tuned setting as an env
+var): [docs/DOCKER_ROCM.md](docs/DOCKER_ROCM.md). The detection and its `.env` were checked on this PC (identical to the
+production config); the image itself has not been built here (no Docker in this environment). Its ROCm: setup.py's
+pinned ROCm 7 by default. Measured here against ROCm 7.9: 10.1 not recommended (GPU memory faults with the
+conversation cache, no speed gain), 7.14.1 stable but prompts ~40% slower.
 
 ## Improvements and speeds (summary, 10 Oct)
 

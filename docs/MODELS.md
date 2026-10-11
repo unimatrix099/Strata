@@ -110,7 +110,8 @@ START-HERE.bat --setup --family coder
 
 **[Swift 1.5](https://huggingface.co/ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF)** - a fine-tune by UkisAI that
 thinks much shorter before answering, so you get the answer sooner, with about the same quality. Same speed per
-token, and about the same RAM as the same size of the original (no IQ3_S). Its own license applies (see its page).
+token, and about the same RAM as the same size of the original (IQ3_S since 10 Oct: on 2x RX 7900 XTX 78 of 79
+known-answer items against the original IQ3_XXS's 75, 37% fewer tokens on hard problems). Its own license applies (see its page).
 More: [details](DETAILS.md#or-swift-15-a-fine-tune-that-thinks-shorter).
 
 ```

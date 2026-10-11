@@ -1,12 +1,54 @@
 # Strata in Docker on AMD GPUs (ROCm, Linux)
 
-The fork's production setup (2x RX 7900 XTX, IQ3_XXS, 128K, the tuned pipeline and the conversation cache) as a
-container: `Dockerfile.rocm`, `docker-compose.rocm.yml`, the settings in one `.env` file. Upstream's own `Dockerfile`
+The fork's production setup (Swift 1.5 IQ3_S on 2x RX 7900 XTX, 128K context, the tuned pipeline, the conversation
+cache and every engine switch kept on 10 Oct) as a container: `Dockerfile.rocm`, `docker-compose.rocm.yml`, the
+settings in one `.env` file, and `docker/install.sh`, which writes that file for your PC. Upstream's own `Dockerfile`
 is for NVIDIA cards only.
 
-**Status:** written and checked in pieces (the entrypoint's syntax, the settings overlay against the production
-config, the build step against `setup.py`'s functions) on 09 Oct 2026; **the image has not been built or run yet**
-(no Docker where it was written). The first build and start on the PC are the test - see "Checking it" below.
+## Quick start
+
+On a Linux PC with an AMD card, Docker (with the Compose plugin) and the `amdgpu` driver:
+
+```
+git clone https://github.com/unimatrix099/Strata.git && cd Strata
+./docker/install.sh
+```
+
+It checks the PC, detects what `.env` needs, asks once, then builds the image (10-20 minutes), starts Strata and
+waits until the API answers. The first start downloads the model (84 GB for the default) unless it is already there.
+Then: the web chat at http://127.0.0.1:8080/, the OpenAI API at http://127.0.0.1:8080/v1, the Anthropic API at
+http://127.0.0.1:8080/v1/messages.
+
+What `install.sh` works out by itself:
+
+| | how |
+|---|---|
+| the GPUs, their architecture (`HIP_ARCHS`) and VRAM | `/sys/class/kfd` (no ROCm needed on the host) |
+| the card order (`GPUS`) | the card that drives a display goes last, so the desktop's VRAM use does not squeeze the first stage |
+| the device groups (`VIDEO_GID`, `RENDER_GID`) | `getent group video render`, else the owners of `/dev/kfd` and `/dev/dri/renderD*` |
+| the model | by RAM: 92 GB+ Swift 1.5 IQ3_S, 60 GB+ Swift 1.5 IQ3_XXS, 44 GB+ IQ2_XS, less: the Coder |
+| the data folder | an existing `Strata-data` next to the repository (or inside it) is reused - nothing is downloaded again |
+| the engine settings | on 2 cards of 20 GB+ with gfx1100 (RX 7900 XT/XTX): the tuned ones measured here; elsewhere setup's own |
+
+Options: `--yes` (no question), `--model swift:IQ3_XXS` / `qwen:IQ3_XXS` / ... (family:size), `--data-dir PATH`,
+`--port N`, `--bind 0.0.0.0 --api-key KEY` (the network; a key is required), `--context N`, `--env-only` (write
+`.env`, build nothing). An existing `.env` is kept as `.env.bak-<time>`.
+
+Everyday use:
+
+```
+docker compose -f docker-compose.rocm.yml logs -f        # the log
+docker compose -f docker-compose.rocm.yml down           # stop
+docker compose -f docker-compose.rocm.yml up -d          # start again (also after editing .env)
+```
+
+Another model: `./docker/install.sh --model qwen:IQ3_XXS` (or edit `FAMILY` / `MODEL` in `.env` and add
+`REINSTALL=1` for one start). An update of the code: `git pull`, then `docker compose -f docker-compose.rocm.yml up -d
+--build`.
+
+**Status:** the detection, the `.env` it writes (identical to the production config here), the settings overlay, and
+setup's Swift 1.5 IQ3_S install were checked on this PC on 11 Oct; **the image itself has not been built or run here**
+(no Docker in this environment) - the first `./docker/install.sh` on the PC is its test ("Checking it" below).
 
 ## Which ROCm
 
@@ -30,7 +72,7 @@ ROCm upgrade in place also needs `~/.cache/comgr` cleared (the old ROCm's cached
 - Not the model: models, the prepared pack, the MTP layer and the configs are on the `/data` volume (a host
   folder). An existing `Strata-data` folder is reused as it is.
 
-## Setting it up
+## Setting it up by hand (what install.sh does)
 
 1. Host: Docker with Compose, the `amdgpu` driver (`ls /dev/kfd /dev/dri/renderD*` lists the devices), 64 GB of RAM
    or more (Strata loads 40-60 GB into RAM).
