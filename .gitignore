@@ -61,3 +61,7 @@ build-vision-cuda12.bat
 
 /.ccache/
 /.rocm-win/
+
+# docker/install.sh: the local Docker settings (may hold an API key) and their backups
+.env
+.env.bak-*
