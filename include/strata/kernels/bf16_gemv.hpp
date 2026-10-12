@@ -59,4 +59,21 @@ bool bf16_gemv_fp32_mmvf_multi_aux(const float* x, int64_t ldx, const uint16_t* 
                                    int64_t n_in, int64_t n_out, int n_tok, const uint16_t* w_aux, float* y_aux,
                                    int64_t ldy_aux, void* stream);
 
+
+/// The persistent FFN half's front end (HIP and CUDA): in ONE launch of one block, the shared expert's gate
+/// g = gate_inp . x for n_tok rows (the bf16 GEMV body bf16_gemv_fp32_mmvf(_multi) would run), out[t] *= sigmoid(g[t])
+/// (shared_expert's vec4 scale), then - with flag_a set - post()'s head: wait until *flag_a >= ring, copy plan_i32
+/// words of the mapped plan into `plan`.  Bit for bit the launches it replaces.  False (nothing launched) when those
+/// launches would have taken another kernel (n_embd not a 256-thread row, unaligned rows).
+struct GateScaleHeadArgs {
+    const float* x = nullptr; int64_t ldx = 0;   // the shared expert's input rows
+    const uint16_t* w = nullptr;                 // ffn_gate_inp_shexp (bf16, n_embd)
+    float* g = nullptr;                          // n_tok gate values (written)
+    float* out = nullptr;                        // the shared expert's output rows, scaled in place
+    int n_embd = 0, n_tok = 0;
+    const uint32_t* flag_a = nullptr; uint32_t ring = 0;   // post()'s head (null: none)
+    const int32_t* m_plan = nullptr; int32_t* plan = nullptr; int plan_i32 = 0;
+};
+bool native_gate_scale_head(const GateScaleHeadArgs& args, void* stream);
+
 }  // namespace strata::kernels

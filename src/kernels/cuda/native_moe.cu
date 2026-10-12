@@ -21,6 +21,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 #include "strata/kernels/native_moe.hpp"
+#include "moe_combine_gather.cuh"
 #include <cuda_runtime.h>
 #include <atomic>
 #include <cstddef>
@@ -94,6 +95,12 @@ __global__ void combine_k10_vec4(const float4* __restrict__ parts4, const float*
     sum.z += sh.z;
     sum.w += sh.w;
     output4[c4] = sum;
+
+}
+__global__ void combine_gather(const float* cpu, const float* __restrict__ hit, const int32_t* __restrict__ hit_rows,
+                               const int32_t* __restrict__ hit_count, const float* __restrict__ weights,
+                               const float* __restrict__ shared, float* __restrict__ output, int64_t n_embd, int k) {
+    combine_gather_body(hw_vblock(), cpu, hit, hit_rows, hit_count, weights, shared, output, n_embd, k);
 }
 __global__ void combine_k10_vec4_hits(const float4* __restrict__ parts4, const float4* __restrict__ hits4,
                                       const int32_t* __restrict__ dst, const int32_t* __restrict__ count,
@@ -187,6 +194,16 @@ void native_moe_combine_multi_hits_added(const float* parts, const float* hits, 
     combine_k10_vec4_hits<<<dim3(unsigned((n4 + 127) / 128), (unsigned) n_tok), 128, 0, static_cast<cudaStream_t>(stream)>>>(
         reinterpret_cast<const float4*>(parts), reinterpret_cast<const float4*>(hits), dst, count, weights,
         reinterpret_cast<const float4*>(shared), reinterpret_cast<float4*>(output), n4);
+    const auto error = cudaGetLastError();
+    if (error != cudaSuccess) throw std::runtime_error(cudaGetErrorString(error));
+}
+void native_moe_combine_gather_multi(const float* cpu_rows, const float* hit, const int32_t* hit_rows,
+                                     const int32_t* hit_count, const float* weights, const float* shared,
+                                     float* output, int64_t n_embd, int64_t k, int n_tok, void* stream) {
+    if (!stream || n_embd <= 0 || k < 1 || k > 15 || n_tok < 1)
+        throw std::invalid_argument("native MoE combine (gather) requires a stream, width, 1..15 experts, tokens");
+    combine_gather<<<dim3(unsigned((n_embd + 255) / 256), (unsigned) n_tok), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+        cpu_rows, hit, hit_rows, hit_count, weights, shared, output, n_embd, int(k));
     const auto error = cudaGetLastError();
     if (error != cudaSuccess) throw std::runtime_error(cudaGetErrorString(error));
 }

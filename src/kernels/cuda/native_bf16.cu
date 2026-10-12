@@ -1,3 +1,5 @@
+#include "vblock.cuh"
+#include "sigmoid_scale_body.cuh"
 #include "strata/kernels/bf16_gemv.hpp"
 #include "s26_tsum.cuh"
 #include "strata/kernels/bf16_bits.hpp"
@@ -44,10 +46,10 @@ __device__ __forceinline__ float mmvf_warp_sum(float value) {
 }
 
 template <int BLOCK_SIZE>
-__global__ void bf16_f32_mmvf_kernel(const float* __restrict__ x, const uint16_t* __restrict__ w,
+__device__ __forceinline__ void bf16_f32_mmvf_kernel_body(const VBlock vb, const float* __restrict__ x, const uint16_t* __restrict__ w,
                                     float* __restrict__ y, int n_in) {
     const int t = threadIdx.x;
-    const uint16_t* row = w + (size_t) blockIdx.x * n_in;
+    const uint16_t* row = w + (size_t) vb.bx * n_in;
     const uint32_t* weights2 = reinterpret_cast<const uint32_t*>(row);
     const float2* inputs2 = reinterpret_cast<const float2*>(x);
     __shared__ float partials[32];
@@ -68,19 +70,24 @@ __global__ void bf16_f32_mmvf_kernel(const float* __restrict__ x, const uint16_t
         __syncthreads();
         if (t < 32) acc = mmvf_warp_sum(partials[t]);
     }
-    if (t == 0) y[blockIdx.x] = acc;
+    if (t == 0) y[vb.bx] = acc;
+}
+template <int BLOCK_SIZE>
+__global__ void bf16_f32_mmvf_kernel(const float* __restrict__ x, const uint16_t* __restrict__ w,
+                                    float* __restrict__ y, int n_in) {
+    bf16_f32_mmvf_kernel_body<BLOCK_SIZE>(hw_vblock(), x, w, y, n_in);
 }
 
 // the same kernel for up to 8 activation rows - the weight row is read ONCE and every
 // token keeps its own accumulator with exactly the single-row kernel's order (pairs, two ordered FMAs, the same warp
 // and block reductions), so each output is bit-identical to a bf16_f32_mmvf_kernel launch of its own.
 template <int BLOCK_SIZE, int NT, bool EXACT_T = true>
-__global__ void bf16_f32_mmvf_multi_kernel(const float* x_, int64_t ldx, const uint16_t* __restrict__ w,
+__device__ __forceinline__ void bf16_f32_mmvf_multi_kernel_body(const VBlock vb, const float* x_, int64_t ldx, const uint16_t* __restrict__ w,
                                           float* y_, int64_t ldy, int n_in, int n_tok) {
     const float* STRATA_PDL_RESTRICT x = x_;   // __restrict__ below sm_70 only (pdl.hpp, #1469)
     float* STRATA_PDL_RESTRICT y = y_;
     const int t = threadIdx.x;
-    const uint16_t* row = w + (size_t) blockIdx.x * n_in;
+    const uint16_t* row = w + (size_t) vb.bx * n_in;
     const uint32_t* weights2 = reinterpret_cast<const uint32_t*>(row);
     __shared__ float partials[NT][32];
     if (t < 32) {
@@ -130,7 +137,12 @@ __global__ void bf16_f32_mmvf_multi_kernel(const float* x_, int64_t ldx, const u
     if (t == 0)
 #pragma unroll
         for (int k = 0; k < NT; ++k)
-            if (EXACT_T || k < n_tok) y[(size_t) k * ldy + blockIdx.x] = acc[k];
+            if (EXACT_T || k < n_tok) y[(size_t) k * ldy + vb.bx] = acc[k];
+}
+template <int BLOCK_SIZE, int NT, bool EXACT_T>
+__global__ void bf16_f32_mmvf_multi_kernel(const float* x_, int64_t ldx, const uint16_t* __restrict__ w,
+                                          float* y_, int64_t ldy, int n_in, int n_tok) {
+    bf16_f32_mmvf_multi_kernel_body<BLOCK_SIZE, NT, EXACT_T>(hw_vblock(), x_, ldx, w, y_, ldy, n_in, n_tok);
 }
 
 // S25 (STRATA_MMVF_ROWS=1): RPB output rows per block. Each block read its row's weights once but all T activation
@@ -378,6 +390,53 @@ void bf16_gemv_fp32_mmvf_cols(const float* x, const uint16_t* w, float* y, int64
         else bf16_gemv_fp32_mmvf_multi(x + (size_t) c0 * n_in, n_in, w, y + (size_t) c0 * n_out, n_out, n_in, n_out, nc,
                                        stream);
     }
+}
+
+
+// ---- the persistent FFN half, the front's last step: the shared expert's gate (its 1-row bf16 GEMV, the same body as
+// bf16_gemv_fp32_mmvf / _multi pick for these rows), its sigmoid scale of the shared expert's output rows (the vec4
+// kernel's element) and the head of post() (wait A, the plan's copy from mapped memory) - one block, one launch,
+// the values of the three launches it replaces
+namespace {
+template <int NT, bool EXACT>
+__global__ void __launch_bounds__(256) gate_scale_head_kernel(GateScaleHeadArgs a) {
+    if constexpr (NT == 1) bf16_f32_mmvf_kernel_body<256>(VBlock{0, 0, 1, 1}, a.x, a.w, a.g, a.n_embd);
+    else bf16_f32_mmvf_multi_kernel_body<256, NT, EXACT>(VBlock{0, 0, 1, 1}, a.x, a.ldx, a.w, a.g, 1, a.n_embd, a.n_tok);
+    __syncthreads();   // g (thread 0's stores) for every thread of the block
+    const int n4 = a.n_embd >> 2;
+    for (int e = threadIdx.x; e < a.n_tok * n4; e += blockDim.x)
+        sigmoid_scale_vec4_elem(reinterpret_cast<float4*>(a.out), a.g, e / n4, e % n4, n4);
+    if (a.flag_a != nullptr) {
+        if (threadIdx.x == 0) {
+            while (*(const volatile uint32_t*) a.flag_a < a.ring) {}
+            __threadfence_system();
+        }
+        __syncthreads();
+        for (int i = threadIdx.x; i < a.plan_i32; i += blockDim.x) a.plan[i] = ((const volatile int32_t*) a.m_plan)[i];
+    }
+}
+}  // namespace
+
+bool native_gate_scale_head(const GateScaleHeadArgs& a, void* stream) {
+    // the dispatchers' choices for these rows: 256-thread blocks (n_embd 2560), the vec4 scale (aligned rows)
+    if (!stream || a.n_tok < 1 || a.n_tok > 8 || mmvf_block_size(a.n_embd) != 256 || (a.n_embd & 3) != 0 ||
+        (reinterpret_cast<uintptr_t>(a.out) & 15u) != 0 || (reinterpret_cast<uintptr_t>(a.x) & 7u) != 0 || (a.ldx & 1) != 0)
+        return false;
+    static const bool rows = [] { const char* v = std::getenv("STRATA_MMVF_ROWS"); return v && v[0] == '1'; }();
+    (void) rows;   // (MMVF_ROWS applies from 64 output rows; the gate is one)
+    const cudaStream_t st = (cudaStream_t) stream;
+    switch (a.n_tok) {
+        case 1: gate_scale_head_kernel<1, true><<<1, 256, 0, st>>>(a); break;
+        case 2: gate_scale_head_kernel<2, true><<<1, 256, 0, st>>>(a); break;
+        case 3: gate_scale_head_kernel<3, true><<<1, 256, 0, st>>>(a); break;
+        case 4: gate_scale_head_kernel<4, true><<<1, 256, 0, st>>>(a); break;
+        case 5: gate_scale_head_kernel<5, true><<<1, 256, 0, st>>>(a); break;
+        case 6: gate_scale_head_kernel<6, true><<<1, 256, 0, st>>>(a); break;
+        default: gate_scale_head_kernel<8, false><<<1, 256, 0, st>>>(a); break;
+    }
+    const cudaError_t result = cudaGetLastError();
+    if (result != cudaSuccess) throw std::runtime_error(std::string("native_gate_scale_head: ") + cudaGetErrorString(result));
+    return true;
 }
 
 }  // namespace strata::kernels

@@ -611,6 +611,35 @@ __global__ void mtp_select_kernel(const float* __restrict__ R_src, int64_t strid
     }
 }
 
+// STRATA_MTP_TOP2=1 (diagnostic): each row's second-best id (the highest logit other than ids[row]; the lowest index on
+// a tie), and the selected row's to a mapped output beside mtp_select's
+__global__ void row_second_kernel(const float* __restrict__ logits, int n_vocab, const int32_t* __restrict__ ids,
+                                  int32_t* __restrict__ out2) {
+    __shared__ float bv[1024];
+    __shared__ int bi[1024];
+    const int t = blockIdx.x, skip = ids[t];
+    const float* l = logits + (size_t) t * n_vocab;
+    float v = __int_as_float(0xff800000);
+    int vi = n_vocab;
+    for (int i = threadIdx.x; i < n_vocab; i += blockDim.x)
+        if (i != skip && l[i] > v) { v = l[i]; vi = i; }
+    bv[threadIdx.x] = v; bi[threadIdx.x] = vi;
+    __syncthreads();
+    for (int o = blockDim.x / 2; o > 0; o >>= 1) {
+        if ((int) threadIdx.x < o) {
+            const float w = bv[threadIdx.x + o]; const int wi = bi[threadIdx.x + o];
+            if (w > bv[threadIdx.x] || (w == bv[threadIdx.x] && wi < bi[threadIdx.x])) { bv[threadIdx.x] = w; bi[threadIdx.x] = wi; }
+        }
+        __syncthreads();
+    }
+    if (threadIdx.x == 0) out2[t] = bi[0] < n_vocab ? bi[0] : 0;
+}
+
+__global__ void mtp_select2_kernel(const int32_t* __restrict__ out2, const int32_t* __restrict__ row_dev, int32_t* out, int j) {
+    ((volatile int32_t*) out)[j] = out2[*row_dev];
+    __threadfence_system();
+}
+
 __global__ void dense_steps_kernel(const int32_t* __restrict__ cells, int n, int32_t* __restrict__ steps) {
     const int i = threadIdx.x;
     if (i >= n) return;
@@ -632,7 +661,16 @@ __global__ void force_token_kernel(int32_t* tok, const int32_t* force, int j) {
 void fetch_blobs(const unsigned long long* src, const int32_t* n, uint8_t* dst, int64_t blob_bytes, int cap, void* stream) {
     if (cap <= 0) return;
     if (blob_bytes % 16 != 0) { std::fprintf(stderr, "fetch_blobs: blob size must be a multiple of 16\n"); std::exit(1); }
-    fetch_blobs_kernel<<<48 * 8, 256, 0, (cudaStream_t) stream>>>(src, n, (uint4*) dst, (long long) (blob_bytes / 16));
+#if defined(STRATA_USE_HIP)
+    // gfx1100 (RX 7900 XTX, ROCm 7.9): a 384 x 256 launch - exactly 48 CUs x 8 blocks - costs 14-16 us even when *n is
+    // 0 (the PCIe share is nearly always empty, and this runs in every layer of every window), 352 blocks or fewer
+    // 2.7-3.0 us; a real fetch reads mapped host memory at 6.9 GB/s from 16 to 384 blocks alike
+    // (autoresearch/explore-261009-ceilings/mega/empty_grid.cpp)
+    constexpr unsigned kFetchBlocks = 96;
+#else
+    constexpr unsigned kFetchBlocks = 48 * 8;
+#endif
+    fetch_blobs_kernel<<<kFetchBlocks, 256, 0, (cudaStream_t) stream>>>(src, n, (uint4*) dst, (long long) (blob_bytes / 16));
     check("fetch_blobs");
 }
 
@@ -692,6 +730,16 @@ void gather_rows(const uint8_t* src, int64_t row_bytes, const int32_t* ids, int6
     else
         gather_rows_kernel<<<48 * 8, 256, 0, s>>>(src, row_bytes, ids, n, dst);
     check("gather_rows");
+}
+
+void row_second(const float* logits, int n_rows, int n_vocab, const int32_t* ids, int32_t* out2, void* stream) {
+    row_second_kernel<<<n_rows, 1024, 0, (cudaStream_t) stream>>>(logits, n_vocab, ids, out2);
+    check("row_second");
+}
+
+void mtp_select2(const int32_t* out2, const int32_t* row_dev, int32_t* out, int j, void* stream) {
+    mtp_select2_kernel<<<1, 1, 0, (cudaStream_t) stream>>>(out2, row_dev, out, j);
+    check("mtp_select2");
 }
 
 void map_ids(int32_t* ids, const int32_t* table, int n, void* stream) {
