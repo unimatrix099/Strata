@@ -156,7 +156,7 @@ fi
 mkdir -p "$DATA_DIR"
 FREE_GB=$(df -BG --output=avail "$DATA_DIR" | tail -1 | tr -dc 0-9)
 ok "data folder: $DATA_DIR ($FREE_GB GB free)"
-existing=$(ls -d "$DATA_DIR"/models/* 2>/dev/null | xargs -r -n1 basename | paste -sd' ' -)
+existing=$(ls -d "$DATA_DIR"/models/* 2>/dev/null | xargs -r -n1 basename | paste -sd' ' - || true)   # an empty folder: none
 [ -n "$existing" ] && ok "models already there (reused): $existing"
 case "$MODEL" in IQ3_S) need=90 ;; IQ3_XXS) need=82 ;; IQ2_XS) need=74 ;; *) need=72 ;; esac
 [ "$FAMILY" = coder ] && need=66
