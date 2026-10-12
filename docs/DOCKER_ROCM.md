@@ -19,6 +19,28 @@ waits until the API answers. The first start downloads the model (84 GB for the 
 Then: the web chat at http://127.0.0.1:8080/, the OpenAI API at http://127.0.0.1:8080/v1, the Anthropic API at
 http://127.0.0.1:8080/v1/messages.
 
+What a first run looks like, step by step (2x RX 7900 XTX, an empty data folder):
+
+1. **The checks** (seconds): Docker and Compose, the `amdgpu` driver, each GPU (architecture, VRAM, PCI address, the
+   displays it drives), the card order, the RAM and the model it picks, the device groups, the data folder and the
+   models already in it, whether the tuned settings apply. Each line starts with `[ok]`; a `[X]` line stops it and
+   says why (see "When something is wrong").
+2. **`.env` is written**, and it asks **"Build and start now?"** - `y`.
+3. **The build** (10-20 minutes, once): the image, ROCm, and the engine compiled for the cards' architecture.
+4. **The first start** (about 1-1.5 hours, once): the model is downloaded into the data folder (Swift 1.5 IQ3_S: 84 GB,
+   plus ~6 GB for the draft layer - an hour or more at 20 MB/s), prepared, then loaded (1-3 minutes). The script
+   shows the log's latest line while it waits; the whole log in another terminal:
+   `docker compose -f docker-compose.rocm.yml logs -f`. Ctrl-C stops the waiting, not Strata.
+5. **"Strata is running"**: the web chat at http://127.0.0.1:8080/; a quick check:
+   `curl http://127.0.0.1:8080/v1/models`; Claude Code on it: `tools/strata-claude.sh` (docs/CLAUDE_CODE.md).
+
+Good to know:
+- The GPUs run one Strata at a time: stop any other Strata (a native `run-*.sh`, another container) first.
+- To skip the download, point `--data-dir` at a folder that already has the model (e.g. an existing `Strata-data`):
+  it is reused as it is. Later starts take 1-3 minutes (the model loads; nothing is downloaded or built again).
+- A failure: the last lines the script printed, or `docker compose -f docker-compose.rocm.yml logs --tail 50`, say
+  where it stopped.
+
 What `install.sh` works out by itself:
 
 | | how |
@@ -47,7 +69,9 @@ Another model: `./docker/install.sh --model qwen:IQ3_XXS` (or edit `FAMILY` / `M
 --build`.
 
 **Status:** the detection, the `.env` it writes (identical to the production config here), the settings overlay, and
-setup's Swift 1.5 IQ3_S install were checked on this PC on 11 Oct; **the image itself has not been built or run here**
+setup's Swift 1.5 IQ3_S install were checked on this PC on 11 Oct; on 12 Oct `install.sh` ran on the host through
+all its checks (Docker 29.1.3, Compose 5.6.0) after three fixes (the Compose plugin or `docker-compose`, a plugin file
+Docker does not register, an empty data folder); **the image itself has not been built or run here**
 (no Docker in this environment) - the first `./docker/install.sh` on the PC is its test ("Checking it" below).
 
 ## Which ROCm
