@@ -16,7 +16,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 
-YES=0; ENV_ONLY=0; DATA_DIR=""; MODEL_ARG=""; PORT=8080; BIND=127.0.0.1; API_KEY=""; CONTEXT=262144
+COMPOSE="docker compose"; YES=0; ENV_ONLY=0; DATA_DIR=""; MODEL_ARG=""; PORT=8080; BIND=127.0.0.1; API_KEY=""; CONTEXT=262144
 while [ $# -gt 0 ]; do
   case "$1" in
     --yes|-y) YES=1 ;;
@@ -49,9 +49,20 @@ say "== checking this PC"
 # ---- Docker
 if [ "$ENV_ONLY" = 0 ]; then
   command -v docker >/dev/null || die "docker is not installed (https://docs.docker.com/engine/install/)"
-  docker compose version >/dev/null 2>&1 || die "the docker compose plugin is missing (docker compose version)"
+  # Compose: the plugin (`docker compose`) or the standalone program (`docker-compose`, v2 or v1.27+)
+  if docker compose version >/dev/null 2>&1; then COMPOSE="docker compose"
+  elif command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then COMPOSE="docker-compose"
+  else
+    warn "docker compose: $(docker compose version 2>&1 | head -1)"
+    command -v docker-compose >/dev/null 2>&1 && warn "docker-compose: $(docker-compose version 2>&1 | head -1)"
+    for d in "$HOME/.docker/cli-plugins" /usr/local/lib/docker/cli-plugins /usr/libexec/docker/cli-plugins \
+             /usr/lib/docker/cli-plugins /root/.docker/cli-plugins; do
+      [ -e "$d/docker-compose" ] && warn "a compose plugin is in $d"
+    done
+    die "Docker Compose does not run for this user: install the plugin (docs/DOCKER_ROCM.md, 'Docker Compose not found')"
+  fi
   docker info >/dev/null 2>&1 || die "docker does not answer for this user: add yourself to the docker group, or run with sudo"
-  ok "docker $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo '?'), $(docker compose version --short 2>/dev/null || echo compose)"
+  ok "docker $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo '?'), $($COMPOSE version --short 2>/dev/null || $COMPOSE version 2>/dev/null | head -1) ($COMPOSE)"
 fi
 # ---- the AMD driver
 [ -e /dev/kfd ] || die "/dev/kfd is missing: the amdgpu kernel driver is not loaded (an AMD GPU and a Linux kernel with amdgpu)"
@@ -199,22 +210,22 @@ STRATA_HIP_FRONT_FUSE=$(tune 1)
 EXTRA_ARGS=$( [ "$RAM_GB" -ge 92 ] && echo "--ple-io ram " )$(tune --remote-expert-opt)
 EOF
 ok ".env written"
-[ "$ENV_ONLY" = 1 ] && { say ""; say "Done (--env-only). Start with: docker compose -f docker-compose.rocm.yml up -d --build"; exit 0; }
+[ "$ENV_ONLY" = 1 ] && { say ""; say "Done (--env-only). Start with: $COMPOSE -f docker-compose.rocm.yml up -d --build"; exit 0; }
 
 # ---- build and start
 say ""
 say "== building the image and starting Strata"
 say "  The build compiles the engine for $ARCHS (10-20 minutes the first time). The first start then downloads"
 say "  the model unless it is already in $DATA_DIR (an hour or more at 20 MB/s), prepares it and loads it."
-ask "Build and start now?" || { say "Not started. Later: docker compose -f docker-compose.rocm.yml up -d --build"; exit 0; }
-docker compose -f docker-compose.rocm.yml up -d --build
+ask "Build and start now?" || { say "Not started. Later: $COMPOSE -f docker-compose.rocm.yml up -d --build"; exit 0; }
+$COMPOSE -f docker-compose.rocm.yml up -d --build
 
 say ""
-say "== waiting until the API answers (Ctrl-C stops waiting, not Strata; the log: docker compose -f docker-compose.rocm.yml logs -f)"
+say "== waiting until the API answers (Ctrl-C stops waiting, not Strata; the log: $COMPOSE -f docker-compose.rocm.yml logs -f)"
 start=$(date +%s); last=""
 until curl -fs "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; do
   state=$(docker inspect -f '{{.State.Status}}' strata 2>/dev/null || echo missing)
-  [ "$state" = running ] || { docker compose -f docker-compose.rocm.yml logs --tail 40; die "the container is $state (the log above)"; }
+  [ "$state" = running ] || { $COMPOSE -f docker-compose.rocm.yml logs --tail 40; die "the container is $state (the log above)"; }
   line=$(docker logs --tail 3 strata 2>&1 | tr '\r' '\n' | grep -v '^\s*$' | tail -1 | cut -c1-110)
   [ "$line" != "$last" ] && printf '  %s\n' "$line" && last=$line
   sleep 10
@@ -225,5 +236,5 @@ say "  Web chat:   http://$BIND:$PORT/"
 say "  OpenAI:     http://$BIND:$PORT/v1      Anthropic: http://$BIND:$PORT/v1/messages"
 say "  Test:       curl http://127.0.0.1:$PORT/v1/chat/completions -H 'Content-Type: application/json' \\"
 say "                -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'"
-say "  Log / stop: docker compose -f docker-compose.rocm.yml logs -f / down"
-say "  Settings:   edit .env, then docker compose -f docker-compose.rocm.yml up -d (MODEL/CONTEXT/GPUS: REINSTALL=1 once)"
+say "  Log / stop: $COMPOSE -f docker-compose.rocm.yml logs -f / down"
+say "  Settings:   edit .env, then $COMPOSE -f docker-compose.rocm.yml up -d (MODEL/CONTEXT/GPUS: REINSTALL=1 once)"

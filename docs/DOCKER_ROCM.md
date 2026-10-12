@@ -139,6 +139,29 @@ After the first start (the same checks as the fork's production tests, FORK.md):
 
 ## When something is wrong
 
+### Docker Compose not found
+
+`install.sh` uses the Compose plugin (`docker compose`) or the standalone program (`docker-compose`). It stops with
+"Docker Compose does not run for this user" when neither runs for you - it prints what each said, and where it found a
+plugin file. The usual causes:
+
+- **Docker's packages without the plugin** (the distribution's `docker.io`): install it - Debian / Ubuntu with
+  Docker's repository `sudo apt install docker-compose-plugin`, Ubuntu's own packages `sudo apt install
+  docker-compose-v2`, Fedora `sudo dnf install docker-compose-plugin`.
+- **The plugin installed for root only** (e.g. into `/root/.docker/cli-plugins/` by an install run with sudo): `sudo
+  docker compose version` works, `docker compose version` does not. Install it for your user, no root needed:
+  ```
+  mkdir -p ~/.docker/cli-plugins
+  curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
+       -o ~/.docker/cli-plugins/docker-compose
+  chmod +x ~/.docker/cli-plugins/docker-compose
+  docker compose version
+  ```
+- **Docker itself needs sudo**: add yourself to the `docker` group (`sudo usermod -aG docker $USER`, then log out and
+  in, or `newgrp docker`); `docker run --rm hello-world` must work without sudo. Snap's Docker
+  (`snap list docker`) is set up differently: Docker Engine from docker.com is the tested route.
+
+
 - **"Permission denied" on `/dev/kfd` or no GPU found:** `VIDEO_GID` / `RENDER_GID` must be the host's numbers
   (`getent group video render`).
 - **Pinned memory errors, or very slow loading:** the `memlock` limit (`ulimits` in the compose file) must stay
