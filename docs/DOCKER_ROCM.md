@@ -169,6 +169,18 @@ outside Docker your user also needs `video` and `render` (`sudo usermod -aG vide
 "Docker Compose does not run for this user" when neither runs for you - it prints what each said, and where it found a
 plugin file. The usual causes:
 
+
+`docker compose` works in your terminal but not in the script? Check in that terminal:
+
+```
+type docker                     # "docker is aliased to `sudo docker'" (or a function): scripts do not see aliases
+docker compose version          # without sudo
+sudo docker compose version     # works only with sudo: the plugin is installed for root - see below
+```
+
+`install.sh` also looks for the plugin file in the usual `cli-plugins` folders (`~/.docker`, `/usr/local/lib/docker`,
+`/usr/libexec/docker`, `/usr/lib/docker`, ...) and runs it directly when it finds one this user can run; when it finds
+none it says which `docker` it ran.
 - **Docker's packages without the plugin** (the distribution's `docker.io`): install it - Debian / Ubuntu with
   Docker's repository `sudo apt install docker-compose-plugin`, Ubuntu's own packages `sudo apt install
   docker-compose-v2`, Fedora `sudo dnf install docker-compose-plugin`.

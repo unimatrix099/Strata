@@ -49,16 +49,28 @@ say "== checking this PC"
 # ---- Docker
 if [ "$ENV_ONLY" = 0 ]; then
   command -v docker >/dev/null || die "docker is not installed (https://docs.docker.com/engine/install/)"
-  # Compose: the plugin (`docker compose`) or the standalone program (`docker-compose`, v2 or v1.27+)
+  # Compose: the plugin (`docker compose`), the standalone program (`docker-compose`, v2 or v1.27+), or a plugin file this
+  # user's docker does not register (another cli-plugins folder, a root-only install): the v2 plugin also runs on its own
+  plugin_dirs=("${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins" "$HOME/.docker/cli-plugins" /usr/local/lib/docker/cli-plugins
+               /usr/local/libexec/docker/cli-plugins /usr/lib/docker/cli-plugins /usr/libexec/docker/cli-plugins
+               /usr/lib64/docker/cli-plugins /opt/docker/cli-plugins /root/.docker/cli-plugins)
   if docker compose version >/dev/null 2>&1; then COMPOSE="docker compose"
   elif command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then COMPOSE="docker-compose"
   else
+    COMPOSE=""
+    for d in "${plugin_dirs[@]}"; do
+      f="$d/docker-compose"
+      if [ -x "$f" ] && "$f" version >/dev/null 2>&1; then COMPOSE="$f"; warn "using the compose plugin file $f directly"; break; fi
+    done
+  fi
+  if [ -z "$COMPOSE" ]; then
     warn "docker compose: $(docker compose version 2>&1 | head -1)"
     command -v docker-compose >/dev/null 2>&1 && warn "docker-compose: $(docker-compose version 2>&1 | head -1)"
-    for d in "$HOME/.docker/cli-plugins" /usr/local/lib/docker/cli-plugins /usr/libexec/docker/cli-plugins \
-             /usr/lib/docker/cli-plugins /root/.docker/cli-plugins; do
-      [ -e "$d/docker-compose" ] && warn "a compose plugin is in $d"
+    for d in "${plugin_dirs[@]}"; do
+      [ -e "$d/docker-compose" ] && warn "a compose plugin is in $d, but this user cannot run it"
     done
+    warn "docker here is: $(command -v docker) ($(docker version --format '{{.Client.Version}}' 2>/dev/null || echo 'version unknown'))"
+    warn "if 'docker compose' works in your terminal, check 'type docker' there: an alias (e.g. sudo docker) is not seen by scripts"
     die "Docker Compose does not run for this user: install the plugin (docs/DOCKER_ROCM.md, 'Docker Compose not found')"
   fi
   docker info >/dev/null 2>&1 || die "docker does not answer for this user: add yourself to the docker group, or run with sudo"
