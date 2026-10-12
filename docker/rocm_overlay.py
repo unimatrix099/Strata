@@ -6,7 +6,7 @@ An env var that is unset or empty leaves the config as it is; "off" removes an e
 
   engine flags:  PIPELINE_WINDOWS SPEC SPEC_MIN_P VRAM_RESERVE_MIB VRAM_RESERVE_LATER_MIB KV_RESIDENT
                  CONVERSATION_CACHE_MIB CONVERSATION_CACHE_SLOTS, and EXTRA_ARGS (more flags, as on a command line)
-  config keys:   HOST API_KEY PARALLEL DRAFT_VOCAB
+  config keys:   HOST API_KEY PARALLEL DRAFT_VOCAB FIT_MAX_TOKENS TOOL_CALL_RECOVERY (1 / 0)
   engine env:    every STRATA_* variable (the engine's switches, e.g. STRATA_QFUSE=1), except STRATA_DATA(_DIR)
 
   python docker/rocm_overlay.py /data/config/strata-iq3_xxs.json
@@ -76,6 +76,11 @@ def overlay(cfg, env):
     if (env.get("DRAFT_VOCAB") or "").strip():
         cfg["draft_vocab"] = env["DRAFT_VOCAB"].strip()
         changed.append(f"draft_vocab {cfg['draft_vocab']}")
+    for name, key in (("FIT_MAX_TOKENS", "fit_max_tokens"), ("TOOL_CALL_RECOVERY", "tool_call_recovery")):
+        v = (env.get(name) or "").strip().lower()
+        if v:
+            cfg[key] = v in ("1", "true", "on", "yes")
+            changed.append(f"{key} {cfg[key]}")
     sw = {k: v for k, v in env.items()
           if k.startswith("STRATA_") and k not in ("STRATA_DATA", "STRATA_DATA_DIR") and v != ""}
     if sw:
