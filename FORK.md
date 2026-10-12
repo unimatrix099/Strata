@@ -328,6 +328,10 @@ differences, easier merges.
 - `pr/two-gpu-split`: upstream's `main` plus only the measured improvements (the hand-over changes, the drafter's
   priority, setup's note, a doc section), for a pull request to upstream; two cards without the pipeline 54.8 ->
   74.5 tok/s (+36%) on its base.
+- `pr/amd-split-handover`, `pr/amd-copy-combine`, `pr/amd-ffn-fusion` (on the second): the proposal for upstream in
+  three pull requests, every new default HIP-only; `pr/amd-decode-speed`: the three together. Measured against
+  upstream 7695859a in bench/results/2026-10-12-split-branches (two cards without pipelined windows: A about +50%;
+  one card: B +3.2%, C with its switches +5.6%; two cards pipelined: C with its switches +9.0%). Not opened upstream yet.
 - `bonus-branch`: the second-branch experiment (`STRATA_BONUS_BRANCH=1`), lossless, no gain; kept for reference.
 - `amd-7900xtx-port`, `split-decode-speed`, `multi-agent-batch`, `hip-rocm79-alignas-fix`: earlier stages of the
   work, superseded by `main`; `old-main-2026-10-04`: the fork's `main` before 08 Oct (an old copy of upstream).
