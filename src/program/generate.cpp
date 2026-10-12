@@ -3342,7 +3342,16 @@ int main(int argc, char** argv) {
             }
         }
     }
-    strata::core::Verifier::set_commit_async(!multi_gpu);   // see Verifier::set_commit_async
+    // A layer split may commit asynchronously too, since every point that touches a session waits on the stages'
+    // commit events (wait_commit, a454dbb) instead of one device's sync.  HIP: on by default (2x RX 7900 XTX, one
+    // window's commit 1.0 ms off the first stage), STRATA_SPLIT_COMMIT_SYNC=1 keeps the wait; CUDA: unchanged (the
+    // wait), STRATA_SPLIT_COMMIT_ASYNC=1 opts in - it was not measured on NVIDIA cards.
+#if defined(STRATA_USE_HIP)
+    const bool split_async = std::getenv("STRATA_SPLIT_COMMIT_SYNC") == nullptr;
+#else
+    const bool split_async = std::getenv("STRATA_SPLIT_COMMIT_ASYNC") != nullptr && std::atoi(std::getenv("STRATA_SPLIT_COMMIT_ASYNC")) != 0;
+#endif
+    strata::core::Verifier::set_commit_async(!multi_gpu || split_async);
     // --pipeline-windows (opt-in): one conversation's windows with the two stages of a layer split overlapped.  Decided
     // here, before any stage sizes its expert cache (the second verifier per stage and the snapshots are allocated
     // after the caches, so their room is kept out of them).  What it does not support turns it off, said once.
@@ -7478,6 +7487,10 @@ int main(int argc, char** argv) {
                 }
             }
             for (int st = 0; st + 1 < n_stages; ++st) stage_ver(st).set_next(&stage_ver(st + 1), &split_drive);
+            // a later stage on its own GPU launches its window graph while the previous stage runs
+            // (Verifier::enable_early_launch; HIP: on, STRATA_SPLIT_EARLY_LAUNCH=0 off; CUDA: off, =1 on)
+            if (!split_same)
+                for (int st = 1; st < n_stages; ++st) stage_ver(st).enable_early_launch();
             std::string plan_s = "0-" + std::to_string(split_at[0] - 1) + " (CUDA0)";
             for (int st = 1; st < n_stages; ++st)
                 plan_s += ", " + std::to_string(split_at[(size_t) st - 1]) + "-" + std::to_string(split_drive.end[st] - 1) +
