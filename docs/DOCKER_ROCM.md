@@ -139,6 +139,30 @@ After the first start (the same checks as the fork's production tests, FORK.md):
 
 ## When something is wrong
 
+### Docker without sudo
+
+`install.sh` needs `docker info` to work for your user. Add yourself to the `docker` group once:
+
+```
+sudo groupadd docker            # "already exists" is fine
+sudo usermod -aG docker $USER
+newgrp docker                   # this terminal only; or log out and in (or reboot) for every terminal
+groups                          # "docker" is listed
+docker run --rm hello-world     # works without sudo
+```
+
+Still "permission denied":
+- the socket's group: `ls -l /var/run/docker.sock` should say `root docker`; if not,
+  `sudo chown root:docker /var/run/docker.sock && sudo systemctl restart docker`;
+- a `~/.docker` folder made by an earlier sudo run: `sudo chown -R $USER:$USER ~/.docker`;
+- Snap's Docker (`snap list docker`) works differently: remove it (`sudo snap remove docker`) and install Docker Engine
+  from docker.com (the Compose plugin comes with it).
+
+The `docker` group is root-equivalent (a member can start a container with the host's files mounted): fine on a
+personal PC, not for untrusted users; rootless Docker is the alternative on a shared machine (more setup, and the GPU
+devices need extra care). Inside the container the GPU groups come from `.env` (`VIDEO_GID`, `RENDER_GID`); for Strata
+outside Docker your user also needs `video` and `render` (`sudo usermod -aG video,render $USER`).
+
 ### Docker Compose not found
 
 `install.sh` uses the Compose plugin (`docker compose`) or the standalone program (`docker-compose`). It stops with
