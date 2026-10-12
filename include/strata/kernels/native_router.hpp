@@ -20,4 +20,8 @@ void native_router_top10_multi(const float* logits, int32_t* ids, float* weights
 /// `stats` is nullptr or 4 device uint64 counters: tail entries seen, swaps, non-resident before, non-resident after.
 void native_route_resident(const float* logits, int32_t* ids, float* weights, const int32_t* res_layer, int n_tok, float margin,
                            int rank_lo, int rank_hi, unsigned long long* stats, void* stream);
+/// The window's top-10 (n_tok rows of 512 logits, each as native_router_top10_multi) and then the doorbell
+/// (doorbell_publish: x's n_x floats, the ids and weights into the mapped buffers, fences, the ring) in ONE launch.
+void native_route_doorbell(const float* logits, int32_t* ids, float* weights, int n_tok, const float* x, int64_t n_x,
+                           float* x_out, int32_t* ids_out, float* w_out, uint32_t* d_seq, void* stream);
 }

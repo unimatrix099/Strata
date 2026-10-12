@@ -18,6 +18,7 @@
 // The legacy canonical projections use their explicit Q8_0/Q8_K activation images. The optional native
 // BF16 path affects only the scalar gate: it reads the original F32 input and uses pinned CUDA MMVF plus
 // an FP32 sigmoid. Native projection overrides independently select CUDA Q8_1 MMVQ and FP32 SwiGLU.
+#include "sigmoid_scale_body.cuh"
 #include "strata/kernels/shared_expert.hpp"
 #include "strata/kernels/bf16_gemv.hpp"
 #include "strata/kernels/bf16_bits.hpp"
@@ -180,15 +181,7 @@ __global__ void sigmoid_scale_rows_kernel(float* __restrict__ out, const float* 
 __global__ void sigmoid_scale_rows_vec4_kernel(float4* __restrict__ out4, const float* __restrict__ g, int n4) {
     const int t = blockIdx.y;
     const int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < n4) {
-        const float gt = __fdividef(1.0f, 1.0f + __expf(-__ldg(g + t)));
-        float4 v = out4[(size_t) t * n4 + i];
-        v.x *= gt;
-        v.y *= gt;
-        v.z *= gt;
-        v.w *= gt;
-        out4[(size_t) t * n4 + i] = v;
-    }
+    if (i < n4) sigmoid_scale_vec4_elem(out4, g, t, i, n4);
 }
 
 void launch_sigmoid_scale_rows(float* out, const float* g, int n_embd, int n_tok, cudaStream_t cs) {

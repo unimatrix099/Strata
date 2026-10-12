@@ -1492,6 +1492,12 @@ if(STRATA_NATIVE_EXPERTS)
     add_executable(native_expert_bench src/kernels/native_expert_bench.cpp)
     target_include_directories(native_expert_bench PRIVATE ${_strata_gpu_include_directories})
     target_link_libraries(native_expert_bench PRIVATE strata_kernels strata_kernels_cpu strata_artifact ${_strata_gpu_runtime_target})
+    if(STRATA_ENABLE_HIP)   # STRATA_HIP_POST_SPLIT / FRONT_FUSE's bench (HIP only; its floor kernel is HIP source)
+      add_executable(ffn_half_bench src/kernels/ffn_half_bench.cpp)
+      set_source_files_properties(src/kernels/ffn_half_bench.cpp PROPERTIES LANGUAGE HIP)
+      target_include_directories(ffn_half_bench PRIVATE ${_strata_gpu_include_directories})
+      target_link_libraries(ffn_half_bench PRIVATE strata_kernels strata_kernels_cpu strata_artifact ${_strata_gpu_runtime_target})
+    endif()
     if(STRATA_BUILD_TESTS AND STRATA_ENABLE_CUDA)
       # Unsloth UD-Q4_K_XL's three expert pairs (and Q8_0 alone, its embedding) on synthetic ggml-quantized weights
       # at 2560/640: GPU and CPU experts against the float reference, GPU dequantizers against to_float.
