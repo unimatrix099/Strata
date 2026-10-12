@@ -4,6 +4,8 @@
 // (ggml/src/ggml-cuda/vecdotq.cuh, dequantize.cuh, quantize.cu at the commit in third_party/ggml/VERSION.txt;
 // MIT license, third_party/ggml/LICENSE).  The block structs and codebook grids come from its ggml-common.h,
 // included unchanged.
+#include <map>
+#include <mutex>
 #include "vblock.cuh"
 #include "moe_combine_gather.cuh"
 #include "strata/kernels/iq_kernels.hpp"
@@ -3777,9 +3779,30 @@ bool native_expert_post_supported(const NativeExpertLayout& L) {
     return gu && (L.d_type == 20 || L.d_type == 42);
 }
 
+namespace {
+// The most blocks of `fn` (256 threads) this device keeps resident at once: a grid barrier deadlocks with more (a small
+// GPU - an iGPU, a low-end card - or a heavier instantiation). Cached per kernel and device; 0 = unknown.
+int post_resident_cap(const void* fn) {
+    static std::mutex mu;
+    static std::map<std::pair<const void*, int>, int> cache;
+    int dev = -1;
+    if (cudaGetDevice(&dev) != cudaSuccess) return 0;
+    std::lock_guard<std::mutex> lock(mu);
+    auto it = cache.find({fn, dev});
+    if (it != cache.end()) return it->second;
+    int per_cu = 0, cus = 0;
+    const bool ok = hipOccupancyMaxActiveBlocksPerMultiprocessor(&per_cu, fn, 256, 0) == hipSuccess &&
+                    hipDeviceGetAttribute(&cus, hipDeviceAttributeMultiprocessorCount, dev) == hipSuccess;
+    const int cap = ok ? per_cu * cus : 0;
+    cache[{fn, dev}] = cap;
+    return cap;
+}
+}  // namespace
+
 bool native_expert_post_persistent(const NativeExpertPostArgs& args, const NativeExpertLayout& L, void* stream) {
     if (args.blocks <= 0 || args.k != 10 || !native_expert_post_supported(L)) return false;
     NativeExpertPostArgs a = args;
+
     a.gu_gx = (int) ((2 * L.n_ff + 15) / 16);                     // gu_rows 16 (the SUB16 path; the types below)
     a.sw_gx = (int) (((long long) a.cap * L.n_ff + 255) / 256);   // the launcher's SwiGLU grid
     const int d_rows = L.d_type == 20 ? 32 : 16;                 // n_ff 640: 32 rows for IQ4_NL, 16 for Q2_0
@@ -3787,6 +3810,12 @@ bool native_expert_post_persistent(const NativeExpertPostArgs& args, const Nativ
     cudaStream_t s = (cudaStream_t) stream;
 #define STRATA_POST(TG, TD)                                                                                           \
     if (L.gu_type == TG && L.d_type == TD) {                                                                          \
+        const void* fn = (kStageIqGrid<TG> && g_stage_grid)                                                           \
+            ? (const void*) expert_post_persistent<TG, kStageIqGrid<TG>, TD>                                          \
+            : (const void*) expert_post_persistent<TG, false, TD>;                                                    \
+        const int cap = post_resident_cap(fn);                                                                        \
+        if (cap <= 0) return false;                       /* unknown: the caller keeps the kernels */                 \
+        if (a.blocks > cap) a.blocks = cap;                                                                           \
         if (kStageIqGrid<TG> && g_stage_grid)                                                                         \
             expert_post_persistent<TG, kStageIqGrid<TG>, TD><<<a.blocks, 256, 0, s>>>(a, L);                          \
         else expert_post_persistent<TG, false, TD><<<a.blocks, 256, 0, s>>>(a, L);                                    \
