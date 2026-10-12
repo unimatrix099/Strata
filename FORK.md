@@ -38,8 +38,9 @@ the batch groups without pad rows, the server's pipeline groups and slot choice,
 shorter; installed by hand, setup does not list it): `run-swift-iq3_s.sh` with `strata-swift-iq3_s-tuned.json` - the
 same tuning as below with Swift's files (the per-layer embedding table is in its shard 1). On 79 known-answer items it
 scored 78 against IQ3_XXS's 75 and finished the hard ones 32% sooner (37% fewer tokens); it decodes ~4-8% and reads
-prompts above 2K 16-25% slower than IQ3_XXS (bench/results/2026-10-10-iq3s-vs-iq3xxs-7900xtx). Back to IQ3_XXS:
-`run-iq3_xxs.sh` (the config below is unchanged).
+prompts above 2K 16-25% slower than IQ3_XXS (bench/results/2026-10-10-iq3s-vs-iq3xxs-7900xtx). IQ3_XXS was deleted on 12 Oct to free
+77 GB; back to it: `./setup.sh --setup --family qwen --model IQ3_XXS --data-dir <data>` (a 76 GB download), then the
+config below.
 Since 12 Oct its context is **262,144 tokens** (the model's maximum): needles 9/9 and facts 2/2 at 128K-240K, a coherent
 ~3,000-word report after 240K, prompts read at ~2,800-3,000 tok/s (240K: the first token after 85 s);
 [bench/results/2026-10-12-262k-swift-iq3s](bench/results/2026-10-12-262k-swift-iq3s/README.md).
@@ -132,7 +133,7 @@ the same engine and tuning, 79 known-answer items:
 | prompts above 2K | - | -16..-25% | -16..-25% |
 
 **11 Oct**
-- Production switched to **Swift 1.5 IQ3_S** (`run-swift-iq3_s.sh`, smoke 7/7); IQ3_XXS kept (`run-iq3_xxs.sh`).
+- Production switched to **Swift 1.5 IQ3_S** (`run-swift-iq3_s.sh`, smoke 7/7); IQ3_XXS kept (`run-iq3_xxs.sh`) - deleted on 12 Oct (77 GB freed).
 - The original IQ3_S deleted (64 -> 117 GB free; IQ3_XXS's shared shard 2 untouched).
 - `setup.py` installs Swift 1.5 IQ3_S (the repository pin moved to the commit that added it; its other files unchanged).
 - **One-command Docker install**: `./docker/install.sh` - [docs/DOCKER_ROCM.md](docs/DOCKER_ROCM.md); the `.env` it
