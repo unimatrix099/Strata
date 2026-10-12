@@ -175,20 +175,19 @@ inline bool g_front_fuse() {
     return false;   // HIP only
 #endif
 }
-// Defaults that differ by backend: on with HIP (measured on RX 7900 XTX), off on CUDA unless the variable is 1, so a
-// CUDA build behaves as before unless asked
-inline bool backend_default(const char* name) {
-    const char* v = std::getenv(name);
+// STRATA_COMBINE_GATHER: the doorbell path's CPU rows, GPU rows and combine as one kernel.  HIP: on (=0 off, measured
+// on RX 7900 XTX); CUDA: off (=1 on), so a CUDA build runs the three kernels as before unless asked
+inline bool g_combine_gather() {
+    static const bool on = [] {
+        const char* v = std::getenv("STRATA_COMBINE_GATHER");
 #if defined(STRATA_USE_HIP)
-    return v == nullptr || std::atoi(v) != 0;
+        return v == nullptr || std::atoi(v) != 0;
 #else
-    return v != nullptr && std::atoi(v) != 0;
+        return v != nullptr && std::atoi(v) != 0;
 #endif
+    }();
+    return on;
 }
-// STRATA_SPLIT_EARLY_LAUNCH (Verifier::enable_early_launch): a later stage's graph waits on its `go` word only with it
-inline bool g_early_launch() { static const bool on = backend_default("STRATA_SPLIT_EARLY_LAUNCH"); return on; }
-// STRATA_COMBINE_GATHER: the doorbell path's CPU rows, GPU rows and combine as one kernel
-inline bool g_combine_gather() { static const bool on = backend_default("STRATA_COMBINE_GATHER"); return on; }
 inline bool g_qfuse() { static const bool on = [] { const char* v = std::getenv("STRATA_QFUSE"); return v != nullptr && std::atoi(v) != 0; }(); return on; }
 #define VDBG(...) do { if (g_dbg) { std::fprintf(stderr, "verify dbg: " __VA_ARGS__); std::fflush(stderr); } } while (0)
 
@@ -413,6 +412,20 @@ const int64_t g_test_stall = [] {
     return e != nullptr ? (int64_t) std::atoll(e) : (int64_t) 0;
 }();
 }  // namespace
+
+// STRATA_SPLIT_EARLY_LAUNCH (Verifier::enable_early_launch): a later stage's graph waits on its `go` word only with
+// it.  HIP: on (=0 off, measured on 2x RX 7900 XTX); CUDA: off (=1 on), so a CUDA graph is the same as before
+static bool g_early_launch() {
+    static const bool on = [] {
+        const char* v = std::getenv("STRATA_SPLIT_EARLY_LAUNCH");
+#if defined(STRATA_USE_HIP)
+        return v == nullptr || std::atoi(v) != 0;
+#else
+        return v != nullptr && std::atoi(v) != 0;
+#endif
+    }();
+    return on;
+}
 
 void Verifier::raise_waits() {
     // the words the spin kernels read (wait_flag_ge, wait_flag_ge_or) are mapped host memory, so a store here
