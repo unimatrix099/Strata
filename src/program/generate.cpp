@@ -3342,10 +3342,16 @@ int main(int argc, char** argv) {
             }
         }
     }
-    // A layer split commits asynchronously too since every point that touches a session waits on the stages' commit
-    // events (wait_commit, a454dbb) instead of one device's sync; STRATA_SPLIT_COMMIT_SYNC=1 keeps the old wait
-    // (2x RX 7900 XTX: bench/results/2026-10-05-split-decode-7900xtx)
-    strata::core::Verifier::set_commit_async(!multi_gpu || std::getenv("STRATA_SPLIT_COMMIT_SYNC") == nullptr);
+    // A layer split may commit asynchronously too, since every point that touches a session waits on the stages'
+    // commit events (wait_commit, a454dbb) instead of one device's sync.  HIP: on by default (2x RX 7900 XTX, one
+    // window's commit 1.0 ms off the first stage), STRATA_SPLIT_COMMIT_SYNC=1 keeps the wait; CUDA: unchanged (the
+    // wait), STRATA_SPLIT_COMMIT_ASYNC=1 opts in - it was not measured on NVIDIA cards.
+#if defined(STRATA_USE_HIP)
+    const bool split_async = std::getenv("STRATA_SPLIT_COMMIT_SYNC") == nullptr;
+#else
+    const bool split_async = std::getenv("STRATA_SPLIT_COMMIT_ASYNC") != nullptr && std::atoi(std::getenv("STRATA_SPLIT_COMMIT_ASYNC")) != 0;
+#endif
+    strata::core::Verifier::set_commit_async(!multi_gpu || split_async);
     // --pipeline-windows (opt-in): one conversation's windows with the two stages of a layer split overlapped.  Decided
     // here, before any stage sizes its expert cache (the second verifier per stage and the snapshots are allocated
     // after the caches, so their room is kept out of them).  What it does not support turns it off, said once.
@@ -7482,7 +7488,7 @@ int main(int argc, char** argv) {
             }
             for (int st = 0; st + 1 < n_stages; ++st) stage_ver(st).set_next(&stage_ver(st + 1), &split_drive);
             // a later stage on its own GPU launches its window graph while the previous stage runs
-            // (Verifier::enable_early_launch; STRATA_SPLIT_EARLY_LAUNCH=0 leaves it off)
+            // (Verifier::enable_early_launch; HIP: on, STRATA_SPLIT_EARLY_LAUNCH=0 off; CUDA: off, =1 on)
             if (!split_same)
                 for (int st = 1; st < n_stages; ++st) stage_ver(st).enable_early_launch();
             std::string plan_s = "0-" + std::to_string(split_at[0] - 1) + " (CUDA0)";
@@ -11201,8 +11207,6 @@ int main(int argc, char** argv) {
                     bool spec = false;     // launched speculatively (behind the window before, ahead of its verdict)
                     bool made = false;     // made from a chain (its outcome can be scored even when the gate held it)
                     bool sfx = false;      // a lookup window (the suffix drafter's drafts)
-                    int32_t alt = -1;      // STRATA_MTP_TOP2 (diagnostic): the drafter's second choice for tok[0]
-                    float p1 = 0.0f;       //   and the drafter's probability of tok[0]
                     int sfx_match = 0;
                 };
                 // front stage `st`'s verifier of w's parity, and the last stage's
@@ -11311,8 +11315,6 @@ int main(int argc, char** argv) {
                     B.seq = A.seq + 1;
                     B.p = A.p + A.T;
                     B.tok[0] = oc[base];
-                    B.alt = oc == mtp.chain_tok() && mtp.chain_tok2()[base] != 0 ? mtp.chain_tok2()[base] : -1;
-                    B.p1 = op[base];
                     B.T = t_rule(op, base + 1, avail);
                     for (int i = 1; i < B.T; ++i) {
                         B.tok[i] = oc[base + i];
@@ -11452,8 +11454,6 @@ int main(int argc, char** argv) {
                 int64_t cal_n[10] = {}, cal_on[10] = {};   // per p_on decile: windows scored, on the path
                 double last_verdict = 0.0;
                 int64_t pl_disagree = 0, pl_late = 0;
-                int64_t pl_bonus_wrong = 0, pl_bonus_alt = 0;   // STRATA_MTP_TOP2: whole windows whose bonus guess missed,
-                                                                // and how many of those the second choice would have hit
                 static const bool pl_prestage = [] {   // STRATA_PIPELINE_PRESTAGE=0: B staged at its launch
                     const char* v = pipe_dbg_env("STRATA_PIPELINE_PRESTAGE");
                     return v == nullptr || std::atoi(v) != 0;
@@ -11693,22 +11693,6 @@ int main(int argc, char** argv) {
                     else if (stop_req.load()) finish = "cancel";
                     const bool last = nf || eos || produced_n >= max_new || stop_req.load();
                     const bool on = !nf && B.launched && a == A.T - 1 && B.tok[0] == outp[(size_t) A.T - 1];
-                    // STRATA_MTP_TOP2_LOG=<file>: one line per whole window with a bonus guess: p1, the A window's
-                    // gate estimate p_on, bonus right, second choice right, B's rows
-                    static FILE* top2_log = [] {
-                        const char* f = std::getenv("STRATA_MTP_TOP2_LOG");
-                        return f ? std::fopen(f, "a") : nullptr;
-                    }();
-                    if (top2_log && B.made && a == A.T - 1) {
-                        const int32_t real = outp[(size_t) A.T - 1];
-                        std::fprintf(top2_log, "%.4f %.4f %d %d %d\n", B.p1, B.p_on, B.tok[0] == real ? 1 : 0,
-                                     B.alt == real ? 1 : 0, B.T);
-                        std::fflush(top2_log);
-                    }
-                    if (B.made && a == A.T - 1 && B.tok[0] != outp[(size_t) A.T - 1]) {
-                        ++pl_bonus_wrong;
-                        if (B.alt >= 0 && B.alt == outp[(size_t) A.T - 1]) ++pl_bonus_alt;
-                    }
                     if (B.made) {   // the gate's calibration: would B have been on the path, by its estimate p_on
                         const bool would = a == A.T - 1 && B.tok[0] == outp[(size_t) A.T - 1];
                         const int bin = std::min(9, std::max(0, (int) (B.p_on * 10.0f)));
@@ -11827,10 +11811,6 @@ int main(int argc, char** argv) {
                                  cls_n[0], avg(cls_ms[0], cls_n[0]), avg(cls_tok[0], cls_n[0]), cls_n[1],
                                  avg(cls_ms[1], cls_n[1]), avg(cls_tok[1], cls_n[1]), (long long) pl_disagree,
                                  (long long) pl_late);
-                    if (pl_bonus_wrong > 0)
-                        std::fprintf(stderr, "strata pipeline bonus: %lld whole windows with a wrong bonus guess, the "
-                                             "drafter's second choice right in %lld\n",
-                                     (long long) pl_bonus_wrong, (long long) pl_bonus_alt);
                     std::string cal;
                     char b[48];
                     for (int i = 0; i < 10; ++i)
@@ -12378,10 +12358,8 @@ int main(int argc, char** argv) {
                     const strata::core::Verifier& v = stage_ver(st);
                     const double w = v.windows > 0 ? (double) v.windows : 1.0;
                     std::fprintf(stderr, "strata serve: stage %d: %lld windows; per window: wait for the GPU %.3f ms, "
-                                         "pool + plan %.3f ms, host staging %.3f ms, commit %.3f ms, graph launch %.3f ms, "
-                                         "final sync %.3f ms\n", st,
-                                 (long long) v.windows, v.ms_wait / w, v.ms_pool / w, v.ms_host / w, v.ms_commit / w,
-                                 v.ms_launch / w, v.ms_sync / w);
+                                         "pool + plan %.3f ms, host staging %.3f ms, commit %.3f ms\n", st,
+                                 (long long) v.windows, v.ms_wait / w, v.ms_pool / w, v.ms_host / w, v.ms_commit / w);
                 }
             if (g.n_qsa_layers() > 0 && ss.qsa_states[ss.qsa_primary()].kv_mode == 1) {
                 // KV streaming, cumulative over the process: blocks the selections named vs blocks read from RAM

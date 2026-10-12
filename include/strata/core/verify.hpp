@@ -171,7 +171,8 @@ public:
     /// LAYER SPLIT, a later stage on its own GPU: launch this stage's window graph from a worker thread while the
     /// previous stage still runs (the previous stage's `run` posts it); the graph waits on its `go` word before it
     /// reads its inputs and the hand-off, and `run` only raises that word.  Takes the graph launch (~1.3 ms on a
-    /// 7900 XTX) off the path between the stages.  Call after `init`; STRATA_SPLIT_EARLY_LAUNCH=0 leaves it off.
+    /// 7900 XTX) off the path between the stages.  Call after `init`.  HIP: on (STRATA_SPLIT_EARLY_LAUNCH=0: off);
+    /// CUDA: off (STRATA_SPLIT_EARLY_LAUNCH=1: on), so a CUDA graph is the same as before unless asked.
     void enable_early_launch();
 
     /// Keep the first `n_keep` (1..T) tokens of the last window; advances `ss.ple_prev` by them.
@@ -308,7 +309,6 @@ public:
     /// the pool never plans a PCIe share (--pcie-frac 0): the window skips that path.  Before the first run.
 
     double ms_wait = 0, ms_pool = 0, ms_host = 0, ms_commit = 0;
-    double ms_launch = 0, ms_sync = 0;   ///< STRATA_SPLIT_TIMING: cudaGraphLaunch, and the final stream sync
     int64_t windows = 0;
     /// STRATA_VERIFY_PROFILE=1 - GPU stage times of the windows since the last call (ms per
     /// window), as one line; empty when off.
@@ -527,9 +527,7 @@ private:
     int32_t *ids_ = nullptr, *hit_slot_ = nullptr, *hit_dst_ = nullptr, *hit_count_ = nullptr;
     int32_t* plan_ = nullptr;                                     // device copy of the plan block
     uint8_t* staging_ = nullptr;                                  // VRAM slots for the PCIe share of the misses
-    unsigned* post_bar_ = nullptr;
-    std::vector<float> lt_us_;                                    // STRATA_PL_LAUNCH_TIMING (diagnostic)
-                               // STRATA_HIP_POST_SPLIT: the persistent tail's barrier
+    unsigned* post_bar_ = nullptr;                                // STRATA_HIP_POST_SPLIT: the persistent tail's barrier
     static constexpr int64_t kStagingBlobs = 16;
     static constexpr int64_t kPcieGroupRows = 4;                  // the PCIe call's groups side by side (of <= 16)
     uint8_t* hit_xq_ = nullptr;

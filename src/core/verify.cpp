@@ -156,11 +156,39 @@ inline bool g_qfuse_hc() {
 // STRATA_HIP_POST_SPLIT=1 (HIP, opt-in): post()'s small kernels as two persistent launches around the VRAM experts'
 // three kernels - the head (wait A, the plan's copy) and the tail (wait B, the PCIe share, wait C, the combine) -
 // bit for bit the kernels' values (iq_kernels.hpp native_expert_post_persistent; ffn_half_bench measures it)
-inline bool g_post_split() { static const bool on = [] { const char* v = std::getenv("STRATA_HIP_POST_SPLIT"); return v != nullptr && std::atoi(v) != 0; }(); return on; }
+inline bool g_post_split() {
+#if defined(STRATA_USE_HIP)
+    static const bool on = [] { const char* v = std::getenv("STRATA_HIP_POST_SPLIT"); return v != nullptr && std::atoi(v) != 0; }();
+    return on;
+#else
+    return false;   // HIP only
+#endif
+}
 // STRATA_HIP_FRONT_FUSE=1 (with STRATA_HIP_POST_SPLIT=1): the FFN half's front fused as well - the top-10 and the doorbell in
 // one launch (native_route_doorbell), the shared expert on the QFUSE q8_1 bytes and without its gate, which post()'s
 // head then applies (native_gate_scale_head: the gate GEMV, the sigmoid scale, wait A and the plan) - bit for bit
-inline bool g_front_fuse() { static const bool on = [] { const char* v = std::getenv("STRATA_HIP_FRONT_FUSE"); return v != nullptr && std::atoi(v) != 0; }(); return on; }
+inline bool g_front_fuse() {
+#if defined(STRATA_USE_HIP)
+    static const bool on = [] { const char* v = std::getenv("STRATA_HIP_FRONT_FUSE"); return v != nullptr && std::atoi(v) != 0; }();
+    return on;
+#else
+    return false;   // HIP only
+#endif
+}
+// Defaults that differ by backend: on with HIP (measured on RX 7900 XTX), off on CUDA unless the variable is 1, so a
+// CUDA build behaves as before unless asked
+inline bool backend_default(const char* name) {
+    const char* v = std::getenv(name);
+#if defined(STRATA_USE_HIP)
+    return v == nullptr || std::atoi(v) != 0;
+#else
+    return v != nullptr && std::atoi(v) != 0;
+#endif
+}
+// STRATA_SPLIT_EARLY_LAUNCH (Verifier::enable_early_launch): a later stage's graph waits on its `go` word only with it
+inline bool g_early_launch() { static const bool on = backend_default("STRATA_SPLIT_EARLY_LAUNCH"); return on; }
+// STRATA_COMBINE_GATHER: the doorbell path's CPU rows, GPU rows and combine as one kernel
+inline bool g_combine_gather() { static const bool on = backend_default("STRATA_COMBINE_GATHER"); return on; }
 inline bool g_qfuse() { static const bool on = [] { const char* v = std::getenv("STRATA_QFUSE"); return v != nullptr && std::atoi(v) != 0; }(); return on; }
 #define VDBG(...) do { if (g_dbg) { std::fprintf(stderr, "verify dbg: " __VA_ARGS__); std::fflush(stderr); } } while (0)
 
@@ -639,7 +667,7 @@ bool Verifier::init(const WeightTable& wt, const ModelGeometry& g, SessionState&
               mapped(64, (void**) &h_flagA_, (void**) &m_flagA_) &&
               mapped(64, (void**) &h_flagB_, (void**) &m_flagB_) &&
               mapped(64, (void**) &h_plan_err_, (void**) &m_plan_err_) &&
-              mapped(64, (void**) &h_go_, (void**) &m_go_) &&
+              (!g_early_launch() || mapped(64, (void**) &h_go_, (void**) &m_go_)) &&
               mapped(T * K * N * 4, (void**) &h_ymiss_, (void**) &m_ymiss_);
     if (!ok) { err = "verify: mapped staging allocation failed"; return false; }
     // the GPU plan: counts(4) | start(cap+1) | dst(cap) | tok(cap) | pad | ptr(cap u64) | ptr2(cap u64) | start2(cap+1)
@@ -884,10 +912,9 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
     bool front_fused_[2] = {false, false};   // per group: STRATA_HIP_FRONT_FUSE ran the front (post()'s head applies the gate)
     // STRATA_HIP_POST_SPLIT's conditions for layer l (the doorbell path with the gathered combine, a covered layer); the
     // front fuse needs them too, since it leaves the shared expert's gate to the split's head
-    static const bool gather_env_all = [] { const char* v = std::getenv("STRATA_COMBINE_GATHER"); return v == nullptr || std::atoi(v) != 0; }();
     auto post_split_ok = [&](int64_t l) -> bool {
         const auto& lay0 = strata::kernels::cpu::expert_layout();
-        if (ar_on() || post_bar_ == nullptr || !gather_env_all || all_resident_ || device_plan_ || remote_opt_ || prof_on_ ||
+        if (ar_on() || post_bar_ == nullptr || !g_combine_gather() || all_resident_ || device_plan_ || remote_opt_ || prof_on_ ||
             !dec_batch || !native_moe_combine_enabled() || !lay0.native || sink_.pcie_mode != 2)
             return false;
         const auto& f = lay0.fmt[(size_t) l];
@@ -923,7 +950,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
 
     // ---- a later stage of a layer split: nothing below may read its inputs or the hand-off before `go` (see
     // enable_early_launch; `run` raises it before the launch when nothing was launched early)
-    if (lb_ > 0 && !batch_rec_) wait_flag_ge(m_go_, 1, cs);
+    if (lb_ > 0 && !batch_rec_ && m_go_ != nullptr) wait_flag_ge(m_go_, 1, cs);
     // ---- the window's inputs, from mapped staging.  With branches the steps and positions (first read by the first
     // layer's mixer) cross PCIe on side 1 beside the embedding and the first hyper-connection read.
     copy_i32_from_mapped(tok_, m_tok_, T, cs);
@@ -1632,8 +1659,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
         float* parts_out = parts_ + (size_t) tb * K * N;
         // the doorbell path's CPU rows, GPU rows and combine as one kernel (bit for bit the three; not for the
         // resident or device-planned paths, the helper's reduced rows, or the per-token combine)
-        static const bool gather_env = [] { const char* v = std::getenv("STRATA_COMBINE_GATHER"); return v == nullptr || std::atoi(v) != 0; }();
-        const bool gather = gather_env && !all_resident_ && !device_plan_ && !remote_opt_ && dec_batch &&
+        const bool gather = g_combine_gather() && !all_resident_ && !device_plan_ && !remote_opt_ && dec_batch &&
                             native_moe_combine_enabled();
         const auto& lay = strata::kernels::cpu::expert_layout();
         // plan v0.3 P6: the VRAM groups now; the PCIe groups once the copy engine has landed them in staging.
@@ -1761,7 +1787,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 native_moe_combine_multi_hits_gated(parts_out, w_ + tb * K, shared_ + tb * N, sh_g_ + tb, bo_ + tb * N, N, K, n, cs);
             } catch (const std::exception& e) { err = "verify combine: " + std::string(e.what()); return false; }
         } else
-        if (gather) {   // the CPU's rows, the GPU's and the combine in one launch (STRATA_COMBINE_GATHER=0: three)
+        if (gather) {   // the CPU's rows, the GPU's and the combine in one launch (g_combine_gather)
             try {
                 native_moe_combine_gather_multi(m_ymiss_ + (size_t) tb * K * N, hit_out, p_dst, p_counts + 1, w_ + tb * K,
                                                 shared_ + tb * N, bo_ + tb * N, N, K, n, cs);
@@ -2245,8 +2271,7 @@ bool Verifier::adapt_gate_wait(int32_t layer, std::string& err) {
 }
 
 void Verifier::enable_early_launch() {
-    if (early_ || lb_ <= 0 || h_go_ == nullptr) return;
-    if (const char* v = std::getenv("STRATA_SPLIT_EARLY_LAUNCH"); v != nullptr && std::atoi(v) == 0) return;
+    if (early_ || lb_ <= 0 || h_go_ == nullptr) return;   // h_go_: g_early_launch()
     early_ = true;
     early_thr_ = std::thread([this] { early_loop(); });
 }
@@ -2291,9 +2316,7 @@ void Verifier::early_loop() {
                 !adapt_gate_wait((int32_t) g_->n_layers, e))
                 ok = false;
             if (ok) {
-                const Clock::time_point tl = Clock::now();
                 const cudaError_t le = cudaGraphLaunch(ar_off_ ? exec_nr_[early_T_] : exec_[early_T_], cs_);
-                ms_launch += ms_since(tl);
                 if (le != cudaSuccess) {
                     ok = false;
                     e = std::string("launch: ") + cudaGetErrorString(le);
@@ -2370,15 +2393,15 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
         _mm_sfence();
         *(volatile uint32_t*) h_go_ = 1;
     } else {
-        if (h_go_ != nullptr) *(volatile uint32_t*) h_go_ = 1;
+        if (h_go_ != nullptr) {   // the graph waits on `go` (enable_early_launch is possible)
+            *(volatile uint32_t*) h_go_ = 1;
+            std::atomic_thread_fence(std::memory_order_seq_cst);
+        }
         if (ar_on() && h_plan_err_ != nullptr) *(volatile uint32_t*) h_plan_err_ = 0;
         // 0.1.43: with the all-resident graph the host serves no layer, so nothing can hold a layer back: every copy first
         if (adapt_gate_ != nullptr && adapt_gate_->active.load(std::memory_order_acquire) && ar_on() &&
             !adapt_gate_wait((int32_t) g.n_layers, err)) return false;
-        std::atomic_thread_fence(std::memory_order_seq_cst);
-        const Clock::time_point tl = Clock::now();
         le = cudaGraphLaunch(ar_off_ ? exec_nr_[T] : exec_[T], cs_);
-        ms_launch += ms_since(tl);
     }
     trace_ev("LAUNCHED", -1, -1, (int64_t) le);
     if (le != cudaSuccess) { err = std::string("verify: launch: ") + cudaGetErrorString(le); return false; }
@@ -2510,9 +2533,7 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
     // itself stays a blocking sync: a cudaStreamQuery poll here cost IQ3_S ~3% decode (a core calling the driver
     // beside the expert workers).
     trace_ev("SYNC", -1, -1, 0);
-    const Clock::time_point ts = Clock::now();
     const cudaError_t se = cudaStreamSynchronize(cs_);
-    ms_sync += ms_since(ts);
     trace_ev("SYNCED", -1, -1, (int64_t) se);
     if (se != cudaSuccess) { err = std::string("verify: ") + cudaGetErrorString(se); return false; }
     if (ar_on() && h_plan_err_ != nullptr && *(volatile uint32_t*) h_plan_err_ != 0) {   // #871: refresh_ar saw the table whole
@@ -3505,20 +3526,7 @@ bool Verifier::pl_launch(int T, const int32_t* tokens, int64_t pos0, std::string
         *(volatile uint32_t*) h_go_ = 1;
         std::atomic_thread_fence(std::memory_order_seq_cst);
     }
-    // STRATA_PL_LAUNCH_TIMING=1 (diagnostic): how long cudaGraphLaunch holds the pipeline thread, which also serves
-    // both stages' doorbells; every 500 launches per stage: the median, 90th percentile and largest, in us
-    static const bool lt_on = [] { const char* v = std::getenv("STRATA_PL_LAUNCH_TIMING"); return v && v[0] == '1'; }();
-    const Clock::time_point lt0 = Clock::now();
     const cudaError_t le = cudaGraphLaunch(exec_[T], cs_);
-    if (lt_on) {
-        lt_us_.push_back((float) (1e3 * ms_since(lt0)));
-        if (lt_us_.size() >= 500) {
-            std::sort(lt_us_.begin(), lt_us_.end());
-            std::fprintf(stderr, "strata verify: CUDA%d window launches (pipeline thread): median %.0f us, p90 %.0f, max %.0f "
-                                 "(500 launches)\n", device_, lt_us_[250], lt_us_[450], lt_us_.back());
-            lt_us_.clear();
-        }
-    }
     trace_ev("LAUNCHED", -1, -1, (int64_t) le);
     if (le != cudaSuccess) { err = std::string("verify: launch: ") + cudaGetErrorString(le); return false; }
     if (fl_prof_) cudaMemcpyAsync(prof_pin_, prof_, prof_h_.size() * 8, cudaMemcpyDeviceToHost, cs_);
