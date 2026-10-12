@@ -40,6 +40,9 @@ same tuning as below with Swift's files (the per-layer embedding table is in its
 scored 78 against IQ3_XXS's 75 and finished the hard ones 32% sooner (37% fewer tokens); it decodes ~4-8% and reads
 prompts above 2K 16-25% slower than IQ3_XXS (bench/results/2026-10-10-iq3s-vs-iq3xxs-7900xtx). Back to IQ3_XXS:
 `run-iq3_xxs.sh` (the config below is unchanged).
+Since 12 Oct its context is **262,144 tokens** (the model's maximum): needles 9/9 and facts 2/2 at 128K-240K, a coherent
+~3,000-word report after 240K, prompts read at ~2,800-3,000 tok/s (240K: the first token after 85 s);
+[bench/results/2026-10-12-262k-swift-iq3s](bench/results/2026-10-12-262k-swift-iq3s/README.md).
 
 `strata-iq3_xxs.json` (made by `setup.py`, then tuned):
 

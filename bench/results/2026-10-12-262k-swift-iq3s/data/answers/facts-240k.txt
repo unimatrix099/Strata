@@ -1,0 +1,16 @@
+=== reasoning ===
+The user is asking me to extract information from three "notes for the auditors" embedded in the text. Let me find them:
+
+1. "Note for the auditors: the access code of vault ALPHA is 3723."
+2. "Note for the auditors: the access code of vault BETA is the code of vault ALPHA plus 3657."
+3. "Note for the auditors: the courier assigned to vault GAMMA is Mirela Toma."
+
+So:
+1. Vault BETA access code = 3723 + 3657 = 7380.
+2. Courier for vault GAMMA = Mirela Toma.
+
+The answer should be brief.
+
+=== answer ===
+1. **Vault BETA access code:** 7380 (vault ALPHA's code 3723 + 3657).
+2. **Courier for vault GAMMA:** Mirela Toma.

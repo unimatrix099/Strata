@@ -16,7 +16,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 
-YES=0; ENV_ONLY=0; DATA_DIR=""; MODEL_ARG=""; PORT=8080; BIND=127.0.0.1; API_KEY=""; CONTEXT=131072
+YES=0; ENV_ONLY=0; DATA_DIR=""; MODEL_ARG=""; PORT=8080; BIND=127.0.0.1; API_KEY=""; CONTEXT=262144
 while [ $# -gt 0 ]; do
   case "$1" in
     --yes|-y) YES=1 ;;

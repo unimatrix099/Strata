@@ -40,8 +40,8 @@ Without the wrapper, the same as env vars (or in the `"env"` block of a Claude C
 | `ANTHROPIC_BASE_URL` | `http://127.0.0.1:8080` | the server; Claude Code adds `/v1/messages` itself |
 | `ANTHROPIC_AUTH_TOKEN` | the server's `api_key`, or any text when it has none | sent as `Authorization: Bearer` |
 | `ANTHROPIC_MODEL`, `ANTHROPIC_DEFAULT_OPUS_MODEL`, `_SONNET_MODEL`, `_HAIKU_MODEL` | the model's name (`/v1/models`), e.g. `swift-1.5-iq3_s` | Strata serves any name; Claude Code only logs `unrecognized_model` |
-| `CLAUDE_CODE_MAX_CONTEXT_TOKENS` | the server's context (131072 here) | Claude Code assumes a Claude window otherwise; it says so itself ("set CLAUDE_CODE_MAX_CONTEXT_TOKENS to its real window") |
-| `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | ~3/4 of it (98304) | compacts the conversation before the server would refuse it |
+| `CLAUDE_CODE_MAX_CONTEXT_TOKENS` | the server's context (262144 here since 12 Oct; 131072 before) | Claude Code assumes a Claude window otherwise; it says so itself ("set CLAUDE_CODE_MAX_CONTEXT_TOKENS to its real window") |
+| `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | ~3/4 of it (196608 at 262K) | compacts the conversation before the server would refuse it |
 | `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | 16000 | its default asks for 32,000 on every request |
 | `API_TIMEOUT_MS` | 1800000 | a long first prompt is read before the first token |
 | `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING` | 1 | nothing goes to Anthropic |
@@ -77,7 +77,7 @@ cleanly.
   model's config serves several at once, at the cost of VRAM for experts (docs/BATCHING.md).
 - **Server-side tools** (web search) do not exist locally; Claude Code's local tools (Bash, Read, Edit, Grep, Glob,
   WebFetch) work.
-- **The context** is the server's (131,072 here), not a Claude model's 200K or 1M: keep
+- **The context** is the server's (262,144 here since 12 Oct), not a Claude model's 200K or 1M: keep
   `CLAUDE_CODE_MAX_CONTEXT_TOKENS` at the real value so compaction comes in time.
 - A local model is not Claude: on these small, well-specified tasks it was correct every time; harder, longer agent
   work is where the difference shows.
