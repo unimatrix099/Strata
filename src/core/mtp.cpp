@@ -1358,7 +1358,6 @@ bool MtpDrafter::capture_round(int T, bool coupled, std::string& err) {
         if (T > 1) {
             copy_row_to_first(row_, R_, HCN, inj_, g_->hc, mixed_, N, cs_);
             native_quantize_q8_1(mixed_, xq_, (int) N, 1, cs_);
-    if (ok && top2_on_) mtp_select2(out2_ids_, row_ + 1, m_out2_, 0, cs_);
         }
         coupled_rec_ = coupled;
         coupled_j_ = 0;
@@ -1366,6 +1365,7 @@ bool MtpDrafter::capture_round(int T, bool coupled, std::string& err) {
         coupled_rec_ = false;
     }
     if (ok) mtp_select(R_, HCN, out_ids_, row_ + 1, Rin_, tok_, m_out_, 0, cs_, probs_, m_prob_);
+    if (ok && top2_on_) mtp_select2(out2_ids_, row_ + 1, m_out2_, 0, cs_);
     if (ok) g_mp.stamp(16, cs_);
     g_mp.base = -1;
     if (ok && force_on_ && !coupled) force_token(tok_, m_force_, 0, cs_);   // chain_launch: step 1's input
@@ -1385,7 +1385,6 @@ bool MtpDrafter::capture_step(int j, bool coupled, std::string& err) {
 #if defined(STRATA_USE_HIP)
     copy_i32_from_mapped(step_ + row * 4, m_step_ + row * 4, 4, cs_);
     copy_i32_from_mapped(pos_ + row * g_->n_head, m_pos_ + row * g_->n_head, g_->n_head, cs_);
-    if (ok && top2_on_) mtp_select2(out2_ids_, row_ + 1, m_out2_, j, cs_);
 #else
     const MappedCopy in[2] = {{step_ + row * 4, m_step_ + row * 4, 4},
                               {pos_ + row * g_->n_head, m_pos_ + row * g_->n_head, g_->n_head}};
@@ -1397,6 +1396,7 @@ bool MtpDrafter::capture_step(int j, bool coupled, std::string& err) {
     bool ok = record_forward(1, row, cs_, err);
     coupled_rec_ = false;
     if (ok) mtp_select(R_, HCN, out_ids_, row_ + 1, Rin_, tok_, m_out_, j, cs_, probs_, m_prob_);
+    if (ok && top2_on_) mtp_select2(out2_ids_, row_ + 1, m_out2_, j, cs_);
     if (ok) g_mp.stamp(16, cs_);
     g_mp.base = -1;
     if (ok && force_on_ && !coupled) force_token(tok_, m_force_, j, cs_);   // chain_launch: step j+1's input

@@ -2311,7 +2311,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                 if (!head_ok) { err = "verify: the fused front's gate/head did not launch"; return false; }
             } else head_ok = strata::kernels::native_expert_post_persistent(a, Lx, cs);
             if (head_ok) {
-                grouped(p_ptr, p_start, p_counts, 0, hit_out);
+                grouped(p_ptr, p_start, p_counts, 0, hit_out, true);   // the VRAM groups, as their own kernels
                 a.part = 2; a.blocks = 40;
                 if (!strata::kernels::native_expert_post_persistent(a, Lx, cs)) {
                     err = "verify: the persistent post() tail did not launch after its head";
