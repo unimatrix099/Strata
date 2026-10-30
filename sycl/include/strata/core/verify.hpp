@@ -20,6 +20,7 @@
 // Requires the default native decode configuration (native projections, fused GR, fused GDN, fast attention and
 // selection, native indexer) and a profile-filled VRAM expert tier with its residency table on the device.
 #pragma once
+#include <functional>
 
 #include <sycl/sycl.hpp>
 #include <dpct/dpct.hpp>
@@ -204,6 +205,11 @@ public:
     /// expert evicted on the host (the pool then computes it on the CPU) before the device table follows.  Also turns
     /// the device-planned layers (E-6) off.  Before `init`.
     void set_always_publish(bool on) { always_publish_ = on; }
+    /// The pipelined windows never let a one-token window advance the state itself: its graph may run *speculatively*
+    /// (ahead of the previous window's verdict), so a self-commit would land before the state it must build on is
+    /// final.  With this set, record_window does not self-commit and pl_commit_async always queues the commit graph -
+    /// the configuration that measures token-identical to the serial path.  Before `capture_all`.
+    void set_self_commit_off(bool on) { self_commit_off_ = on; }
     dpct::queue_ptr stream() const { return cs_; }
     int device() const { return device_; }
     /// Capture every window size and the commit graph now (a capture syncs the stream: never with a window in flight).
@@ -266,6 +272,7 @@ private:
     // batch windows (see init_slots)
     std::vector<SessionState*> slots_;
     bool batch_rec_ = false;               ///< record_window is capturing a batch window
+    bool self_commit_off_ = false;         ///< set_self_commit_off: the pipelined windows commit through the graph
     int row_base_ = 0;                     ///< ... its hand-off rows start here (a pipeline group's own rows)
     int brow_[8] = {};                     ///< ... and row t is slot brow_[t]
     bool last_batch_ = false;              ///< the last run was a batch window (set_plan_slot: one group)
@@ -303,9 +310,9 @@ private:
     void collect_profile();   ///< STRATA_VERIFY_PROFILE: add the last window's stamps to prof_sum_
     void accumulate_profile(const unsigned long long* stamps);   ///< one window's stamps (host copy) into prof_sum_
     // pipelined windows (pl_launch ...)
-    dpct::queue_ptr ext_stream_ =
-        &dpct::get_in_order_queue(); ///< set_stream: the stage's shared stream
-                                     ///< (not destroyed here)
+    dpct::queue_ptr ext_stream_ = nullptr;  ///< set_stream: the stage's shared stream (not destroyed here);
+                                          ///< nullptr = none until set_stream() (#1555: a queue pointer captured
+                                          ///< at construction would be the *constructing* device's)
     bool always_publish_ = false;
     void pl_stage(int T, const int32_t* tokens, int64_t pos0, const int32_t ple_prev[2]);
     dpct::event_ptr ev_done_ = nullptr, ev_commit_ = nullptr;
@@ -354,6 +361,18 @@ private:
     bool copy_used_ = false;
     bool capture_commit(std::string& err);
     bool record_window(int T, dpct::queue_ptr cs, std::string &err);
+    // STRATA_VERIFY_STEPPED=1 (opt-in; Arc A-series / DG2): DG2 has no usm_atomic_host_allocations, so a running
+    // kernel does not see the host's flag stores and the host sees the GPU's ring late (the doorbell wait is most of
+    // a window there).  Stepped mode records the window as one graph per segment between host serves and serves each
+    // layer group's CPU experts at a queue boundary: every flag a segment waits on is raised before it is submitted.
+    // step_hook_ is called after a group's doorbell publish (a serve point), step_hook2_ after its VRAM expert groups
+    // (a split point: the next segment is submitted as soon as the pool publishes its plan, while the CPU rows run).
+    std::function<bool(int64_t, int)> step_hook_;
+    std::function<bool(int64_t, int)> step_hook2_;
+    std::vector<dpct::experimental::command_graph_exec_ptr> seg_[9];
+    std::vector<std::pair<int64_t, int>> seg_at_[9];   ///< the (layer, group) after segment i; the last has none
+    std::vector<char> seg_kind_[9];                    ///< 1: a serve point, 0: a split point
+    bool capture_segments(int T, std::string& err);
     // #649: STRATA_VERIFY_TRACE=1 - a host event ring (trace_ev) and GPU breadcrumbs: the profiler's stamp points,
     // per layer and token group, written to mapped memory (null when the trace is off)
     void trace_ev(const char* what, int64_t step, int64_t layer, int64_t aux) const;
@@ -447,6 +466,10 @@ private:
     static constexpr int64_t kPcieGroupRows = 4;                  // the PCIe call's groups side by side (of <= 16)
     uint8_t* hit_xq_ = nullptr;
     uint8_t* nat_xq_ = nullptr;   // plan v0.3 P6: q8_1 activations for a native pack's grouped experts
+    float* nat_xr_ = nullptr;     // APR: the Hadamard-rotated expert input (the shared expert and the CPU keep xm); nullptr
+                                  // unless some layer's gate/up is folded
+    const float* had_sx_ = nullptr;   // APR: device sign vectors for x (n_embd) and h (n_ff); nullptr = identity
+    const float* had_sh_ = nullptr;
     float* hit_xs_ = nullptr;
     void* hit_scratch_ = nullptr;
     float *head_mixed_ = nullptr, *head_inj_ = nullptr, *head_logits_ = nullptr;

@@ -10,6 +10,15 @@ Every number here was measured on that PC. The full record, with every try and t
 
 ## What the fork adds
 
+**30 Oct 2026: upstream 0.2.8 merged** (branch `merge-upstream-0.2.8`, 3,208 upstream commits since the 08 Oct base).
+Upstream now has its own overlapped hand-off on a layer split (`STRATA_SPLIT_OVERLAP=1`, opt-in, measured by its author
+on 2x RX 7900 XTX: 53 -> 70.1 tok/s, same tokens) and a switch for the drafter's stream priority on HIP
+(`STRATA_MTP_HIP_PRIO=1`), so the fork's asynchronous commit, early launch and ROCm priority rows below were **dropped
+in the merge** and the production config sets those two switches instead. Kept: the 96-block copy kernel, the gathered
+combine, `STRATA_HIP_POST_SPLIT`, `STRATA_HIP_FRONT_FUSE` and the `STRATA_MTP_TOP2` diagnostic, re-applied onto
+upstream's restructured kernels (the expert kernels' bodies are written against `VBlock` again). The merge's build,
+exactness and speed checks are in [The merge of upstream 0.2.8](#the-merge-of-upstream-028-30-oct).
+
 | change | commit | measured |
 |---|---|---|
 | a split's commits do not wait (asynchronous commit on a two-GPU layer split) | `7b61b67` | +3.4% decode |
@@ -66,6 +75,7 @@ Since 12 Oct its context is **262,144 tokens** (the model's maximum): needles 9/
 - since 10 Oct also `"STRATA_HIP_POST_SPLIT": "1"` and `"STRATA_HIP_FRONT_FUSE": "1"` (the FFN half of each layer as 11
   kernels instead of 23, bit-exact: decode +3.5% and +2.7%), and the engine's PCIe copy kernel at 96 blocks (+6%).
 - since 10 Oct, late, `"STRATA_PREFILL_CPU_SHARE_MAX": "2048"`: the CPU share on prompt chunks below 2,048 tokens only (it was 3,072): 1K / 2K prompts keep +14.5% / +7.7%, 4K +1.5% (autoresearch/explore-261010-cpu).
+- since 30 Oct (the merge of upstream 0.2.8) also `"STRATA_SPLIT_OVERLAP": "1"` (upstream's overlapped hand-off between the two cards, which replaces the fork's early launch and asynchronous commit) and `"STRATA_MTP_HIP_PRIO": "1"` (the draft stream at the highest priority on gfx1100, which replaces the fork's ROCm priority change); both to be measured against the 12 Oct engine
 
 The engine is `engine/strata`, built from `main` (below). Measured on 08 Oct with the build of `main`:
 
@@ -291,6 +301,25 @@ card: the launch gaps equal the bandwidth floor), prompt reading at a third of t
 | 10 Oct | option B step 2: the FFN half's front fused (`STRATA_HIP_FRONT_FUSE=1`) | decode +2.7% (six rounds, 31 of 48 faster), same text; smoke 7/7 |
 | 10 Oct | CPU side investigated: pool placement and task count (defaults best), the window launch on its own thread (-2.8%, dropped), the prompt CPU share's limit 3,072 -> 2,048 | 4K prompts +1.5%, 1-2K unchanged; decode: the CPU is not the bottleneck (0.2 CPU experts per layer) |
 | 10-11 Oct | IQ3_S and Swift 1.5 IQ3_S compared with IQ3_XXS (speed, 79 known-answer items); production switched to Swift 1.5 IQ3_S | 78 / 76 / 75 of 79; Swift 37% fewer tokens on hard problems; smoke 7/7 |
+| 30 Oct | upstream 0.2.8 merged (branch `merge-upstream-0.2.8`); the hand-over rows dropped for upstream's `STRATA_SPLIT_OVERLAP=1` and `STRATA_MTP_HIP_PRIO=1` | build, exactness and speed: see below |
+
+## The merge of upstream 0.2.8 (30 Oct)
+
+- **Branch** `merge-upstream-0.2.8` = `main` + `upstream/main` 870aedd9 (tag v0.2.8, 29 Oct). 18 files conflicted; the
+  conflicted engine files were taken from upstream and the fork's kept commits (`d0c8d6c`, `c45a551`, `e320b78`,
+  `3c8980f`, `a332ef8`, `1ad25e4`) re-applied onto them. Docs and setup.py are upstream's; README keeps the fork's banner.
+- **Dropped:** `7b61b67` (asynchronous commit), `0419d49` + `a1d9116` + `ef8af0c` (early launch, `STRATA_SPLIT_EARLY_LAUNCH`,
+  `STRATA_SPLIT_COMMIT_SYNC`), `3e1b02c` (ROCm draft priority; upstream's `STRATA_MTP_HIP_PRIO=1`), `0b8e74e`'s
+  `STRATA_PL_LAUNCH_TIMING` diagnostic, the setup notes `bc94d9d` / `022e068`.
+- **Production switches added:** `STRATA_SPLIT_OVERLAP=1`, `STRATA_MTP_HIP_PRIO=1` (docker/rocm.env.example,
+  docker/install.sh, the server config).
+- **Also new upstream for this PC:** HIP builds default to 16-row batch windows (`STRATA_WINDOW_MAX_T`), the QFUSE
+  fused q8_1 producers now divide as the separate quantiser does (#3948: `STRATA_QFUSE=1` text can differ from the
+  10-12 Oct engine's by about one code per million), an opt-in exact long-prompt scorer on gfx1100
+  (`STRATA_SCORES_THREAD=1`), the measured PCIe share refinement on HIP, two GPU queues at start.
+- **Checks:** build, exactness (the same text as the installed engine with the production switches) and speed
+  (`bench_many.py` against the installed engine, alternating) - pending: the container had no GPU passthrough and no
+  ROCm on 30 Oct (see the table above when they are done).
 
 ## Bringing in upstream's changes
 

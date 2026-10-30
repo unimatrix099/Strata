@@ -219,6 +219,8 @@ STRATA_PREFILL_CPU_SHARE_MAX=$(tune 2048)
 STRATA_PA_FAST=$(tune 1)
 STRATA_HIP_POST_SPLIT=$(tune 1)
 STRATA_HIP_FRONT_FUSE=$(tune 1)
+STRATA_SPLIT_OVERLAP=$(tune 1)
+STRATA_MTP_HIP_PRIO=$(tune 1)
 EXTRA_ARGS=$( [ "$RAM_GB" -ge 92 ] && echo "--ple-io ram " )$(tune --remote-expert-opt)
 EOF
 ok ".env written"
