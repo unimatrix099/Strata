@@ -17,7 +17,7 @@ on 2x RX 7900 XTX: 53 -> 70.1 tok/s, same tokens) and a switch for the drafter's
 in the merge** and the production config sets those two switches instead. Kept: the 96-block copy kernel, the gathered
 combine, `STRATA_HIP_POST_SPLIT`, `STRATA_HIP_FRONT_FUSE` and the `STRATA_MTP_TOP2` diagnostic, re-applied onto
 upstream's restructured kernels (the expert kernels' bodies are written against `VBlock` again). The merge's build,
-exactness and speed checks are in [The merge of upstream 0.2.8](#the-merge-of-upstream-028-30-oct).
+exactness, speed and quality checks are in [The merge of upstream 0.2.8](#the-merge-of-upstream-028-30-oct).
 
 | change | commit | measured |
 |---|---|---|
@@ -301,7 +301,7 @@ card: the launch gaps equal the bandwidth floor), prompt reading at a third of t
 | 10 Oct | option B step 2: the FFN half's front fused (`STRATA_HIP_FRONT_FUSE=1`) | decode +2.7% (six rounds, 31 of 48 faster), same text; smoke 7/7 |
 | 10 Oct | CPU side investigated: pool placement and task count (defaults best), the window launch on its own thread (-2.8%, dropped), the prompt CPU share's limit 3,072 -> 2,048 | 4K prompts +1.5%, 1-2K unchanged; decode: the CPU is not the bottleneck (0.2 CPU experts per layer) |
 | 10-11 Oct | IQ3_S and Swift 1.5 IQ3_S compared with IQ3_XXS (speed, 79 known-answer items); production switched to Swift 1.5 IQ3_S | 78 / 76 / 75 of 79; Swift 37% fewer tokens on hard problems; smoke 7/7 |
-| 30 Oct | upstream 0.2.8 merged (branch `merge-upstream-0.2.8`); the hand-over rows dropped for upstream's `STRATA_SPLIT_OVERLAP=1` and `STRATA_MTP_HIP_PRIO=1` | build, exactness and speed: see below |
+| 30 Oct | upstream 0.2.8 merged (branch `merge-upstream-0.2.8`); the hand-over rows dropped for upstream's `STRATA_SPLIT_OVERLAP=1` and `STRATA_MTP_HIP_PRIO=1` | builds; same text as upstream (not as the 12 Oct engine: upstream's change); decode parity (110.8 vs 111.9 tok/s); smoke 7/7; known answers 79/79 (old 77/79) |
 
 ## The merge of upstream 0.2.8 (30 Oct)
 
@@ -317,9 +317,16 @@ card: the launch gaps equal the bandwidth floor), prompt reading at a third of t
   fused q8_1 producers now divide as the separate quantiser does (#3948: `STRATA_QFUSE=1` text can differ from the
   10-12 Oct engine's by about one code per million), an opt-in exact long-prompt scorer on gfx1100
   (`STRATA_SCORES_THREAD=1`), the measured PCIe share refinement on HIP, two GPU queues at start.
-- **Checks:** build, exactness (the same text as the installed engine with the production switches) and speed
-  (`bench_many.py` against the installed engine, alternating) - pending: the container had no GPU passthrough and no
-  ROCm on 30 Oct (see the table above when they are done).
+- **Checks (30 Oct, the GPU back; [bench/results/2026-10-30-merge-upstream-0.2.8](bench/results/2026-10-30-merge-upstream-0.2.8/README.md)):**
+  the HIP build needed three fixes (`5f80203`: upstream's `__shared__ alignas(16)` on ROCm 7.9, upstream's grouped
+  lambda's new flag, the TOP2 select's place). **Exact against upstream:** the merged engine and pure upstream
+  870aedd9 write the same text, with the fork's switches on or off. **Not the same text as the 12 Oct engine**, even at
+  the same resident expert set (checked by matching the VRAM reserve): that is upstream's own numeric change
+  (`STRATA_DEFAULTS=026`, `STRATA_COMMIT_BATCH=0`, `STRATA_FUSE_HITS=0` do not take it back). **Speed: parity**
+  (8 prompts x 3 reps, two alternating rounds: 110.8 against 111.9 tok/s median, round-to-round spread ±5%).
+  `smoke.py` 7/7; `batch_test.py` 4/4 identical with the exact flags (3/4 without, the known drift); the 79-item
+  known-answer suite **79/79** (the installed engine 77/79 the same day) with 7% fewer tokens. The merged engine's
+  automatic cache is 4 slots smaller (its binary is 53 instead of 26 MB, ~10 MiB less free VRAM at sizing).
 
 ## Bringing in upstream's changes
 
