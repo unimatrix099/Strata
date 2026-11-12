@@ -75,9 +75,9 @@ Since 12 Oct its context is **262,144 tokens** (the model's maximum): needles 9/
 - since 10 Oct also `"STRATA_HIP_POST_SPLIT": "1"` and `"STRATA_HIP_FRONT_FUSE": "1"` (the FFN half of each layer as 11
   kernels instead of 23, bit-exact: decode +3.5% and +2.7%), and the engine's PCIe copy kernel at 96 blocks (+6%).
 - since 10 Oct, late, `"STRATA_PREFILL_CPU_SHARE_MAX": "2048"`: the CPU share on prompt chunks below 2,048 tokens only (it was 3,072): 1K / 2K prompts keep +14.5% / +7.7%, 4K +1.5% (autoresearch/explore-261010-cpu).
-- since 30 Oct (the merge of upstream 0.2.8) also `"STRATA_SPLIT_OVERLAP": "1"` (upstream's overlapped hand-off between the two cards, which replaces the fork's early launch and asynchronous commit) and `"STRATA_MTP_HIP_PRIO": "1"` (the draft stream at the highest priority on gfx1100, which replaces the fork's ROCm priority change); both to be measured against the 12 Oct engine
+- since 12 Nov (the merge of upstream 0.2.8 installed) also `"STRATA_MTP_HIP_PRIO": "1"` (the draft stream at the highest priority on gfx1100, upstream's version of the fork's ROCm priority change). Upstream's `STRATA_SPLIT_OVERLAP=1` is not set: it is a no-op beside `--pipeline-windows 2` (the engine says so at start); it only replaces the fork's hand-over in the non-pipelined mode.
 
-The engine is `engine/strata`, built from `main` (below). Measured on 08 Oct with the build of `main`:
+The engine is `engine/strata`, built from `main` (below); production runs its copy `engine/strata-prod-1112` (the 0.2.8 merge, installed 12 Nov; the 12 Oct engine kept beside it as `strata-1012` and `strata-prod-1010`). Measured on 08 Oct with the build of `main`:
 
 | | tok/s |
 |---|---|
@@ -302,6 +302,7 @@ card: the launch gaps equal the bandwidth floor), prompt reading at a third of t
 | 10 Oct | CPU side investigated: pool placement and task count (defaults best), the window launch on its own thread (-2.8%, dropped), the prompt CPU share's limit 3,072 -> 2,048 | 4K prompts +1.5%, 1-2K unchanged; decode: the CPU is not the bottleneck (0.2 CPU experts per layer) |
 | 10-11 Oct | IQ3_S and Swift 1.5 IQ3_S compared with IQ3_XXS (speed, 79 known-answer items); production switched to Swift 1.5 IQ3_S | 78 / 76 / 75 of 79; Swift 37% fewer tokens on hard problems; smoke 7/7 |
 | 30 Oct | upstream 0.2.8 merged (branch `merge-upstream-0.2.8`); the hand-over rows dropped for upstream's `STRATA_SPLIT_OVERLAP=1` and `STRATA_MTP_HIP_PRIO=1` | builds; same text as upstream (not as the 12 Oct engine: upstream's change); decode parity (110.8 vs 111.9 tok/s); smoke 7/7; known answers 79/79 (old 77/79) |
+| 12 Nov | the merge installed: `main` fast-forwarded and pushed, `engine/strata-prod-1112`, `STRATA_MTP_HIP_PRIO=1` in the production config | not yet started (no GPU in the sandbox that day) |
 
 ## The merge of upstream 0.2.8 (30 Oct)
 
@@ -327,6 +328,10 @@ card: the launch gaps equal the bandwidth floor), prompt reading at a third of t
   `smoke.py` 7/7; `batch_test.py` 4/4 identical with the exact flags (3/4 without, the known drift); the 79-item
   known-answer suite **79/79** (the installed engine 77/79 the same day) with 7% fewer tokens. The merged engine's
   automatic cache is 4 slots smaller (its binary is 53 instead of 26 MB, ~10 MiB less free VRAM at sizing).
+- **Installed (12 Nov):** the branch merged into `main` (fast-forward) and pushed; `build-hip/strata` copied to
+  `engine/strata` and `engine/strata-prod-1112`, the production config pointed at the copy with `STRATA_MTP_HIP_PRIO=1`
+  added to its env. The sandbox had no GPU that day, so the installed engine was **not started**: the first start and
+  `smoke.py` on the production config are still to run.
 
 ## Bringing in upstream's changes
 
