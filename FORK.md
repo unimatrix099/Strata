@@ -302,7 +302,7 @@ card: the launch gaps equal the bandwidth floor), prompt reading at a third of t
 | 10 Oct | CPU side investigated: pool placement and task count (defaults best), the window launch on its own thread (-2.8%, dropped), the prompt CPU share's limit 3,072 -> 2,048 | 4K prompts +1.5%, 1-2K unchanged; decode: the CPU is not the bottleneck (0.2 CPU experts per layer) |
 | 10-11 Oct | IQ3_S and Swift 1.5 IQ3_S compared with IQ3_XXS (speed, 79 known-answer items); production switched to Swift 1.5 IQ3_S | 78 / 76 / 75 of 79; Swift 37% fewer tokens on hard problems; smoke 7/7 |
 | 30 Oct | upstream 0.2.8 merged (branch `merge-upstream-0.2.8`); the hand-over rows dropped for upstream's `STRATA_SPLIT_OVERLAP=1` and `STRATA_MTP_HIP_PRIO=1` | builds; same text as upstream (not as the 12 Oct engine: upstream's change); decode parity (110.8 vs 111.9 tok/s); smoke 7/7; known answers 79/79 (old 77/79) |
-| 12 Nov | the merge installed: `main` fast-forwarded and pushed, `engine/strata-prod-1112`, `STRATA_MTP_HIP_PRIO=1` in the production config | not yet started (no GPU in the sandbox that day) |
+| 12 Nov | the merge installed: `main` fast-forwarded and pushed, `engine/strata-prod-1112`, `STRATA_MTP_HIP_PRIO=1` in the production config | started 12 Nov (the GPU back): `smoke.py` on the production config 7/7, 0 engine errors, decode 110-117 tok/s, 4.9K prompt 1279 tok/s; serving on 8080 |
 
 ## The merge of upstream 0.2.8 (30 Oct)
 
@@ -330,8 +330,9 @@ card: the launch gaps equal the bandwidth floor), prompt reading at a third of t
   automatic cache is 4 slots smaller (its binary is 53 instead of 26 MB, ~10 MiB less free VRAM at sizing).
 - **Installed (12 Nov):** the branch merged into `main` (fast-forward) and pushed; `build-hip/strata` copied to
   `engine/strata` and `engine/strata-prod-1112`, the production config pointed at the copy with `STRATA_MTP_HIP_PRIO=1`
-  added to its env. The sandbox had no GPU that day, so the installed engine was **not started**: the first start and
-  `smoke.py` on the production config are still to run.
+  added to its env. Started the same day once the GPU was back: `smoke.py` on the production config (port 8091, the
+  7 checks) 7/7 with 0 engine error lines, decode 110-117 tok/s, the 4.9K-token prompt at 1279 tok/s; the production
+  server on 8080 runs `strata-prod-1112` with the switch in its environment and answers.
 
 ## Bringing in upstream's changes
 
