@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Server smoke for the installed config (2x RX 7900 XTX, IQ3_XXS) with the current engine.
 
+Usage: smoke.py [CONFIG] [PORT] - the config file in the checkout (default strata-iq3_xxs.json; the production one is
+strata-swift-iq3_s-tuned.json) and the port the smoke server listens on (default 8091, so that a running production
+server on 8080 is left alone).
+
 Starts serve/server.py (engine log to data/logs/smoke-*.engine.txt), then: a fact question, a 4.5K-token prompt
 (a summary of docs/AMD_HIP.md), the Anthropic endpoint, a stream cut off after 3 s followed by a new request, a
 two-turn chat and a sampled answer.  Prints each answer's start and speed, and the engine log's error lines.
@@ -9,7 +13,8 @@ import json, os, signal, subprocess, sys, time, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
-PORT = 8091
+PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8091
+CONFIG = sys.argv[1] if len(sys.argv) > 1 else "strata-iq3_xxs.json"
 
 
 def call(path, body, headers=None, timeout=900):
@@ -30,7 +35,7 @@ def chat(name, body, check):
 
 
 def main():
-    cfg = json.load(open(os.path.join(ROOT, "strata-iq3_xxs.json")))
+    cfg = json.load(open(os.path.join(ROOT, CONFIG)))
     logs = os.path.join(HERE, "data", "logs")
     os.makedirs(logs, exist_ok=True)
     stamp = time.strftime("%H%M%S")

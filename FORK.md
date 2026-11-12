@@ -357,7 +357,8 @@ Before pushing, check on the PC:
 3. Speed: `autoresearch/explore-261007-tg/bench_many.py --label X --exe build-hip/strata` against the installed
    engine, alternating, several runs (compare `summ.py`'s ms per window: a change in which experts sit where
    changes the text and the tokens per window).
-4. Server: `bench/results/2026-10-05-split-decode-7900xtx/smoke.py` (7 checks) and `tools/batch_test.py --exe
+4. Server: `bench/results/2026-10-05-split-decode-7900xtx/smoke.py [CONFIG] [PORT]` (7 checks; the production config
+   `strata-swift-iq3_s-tuned.json` as the argument, port 8091 by default) and `tools/batch_test.py --exe
    build-hip/strata --config strata-iq3_xxs.json --batch 4 --n 4 --extra "--layer-split 26"`.
 5. Install: copy `build-hip/strata` to `engine/strata` (keep the old one beside it).
 
