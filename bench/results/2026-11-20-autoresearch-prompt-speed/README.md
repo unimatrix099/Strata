@@ -66,6 +66,12 @@ experts on that card, fewer chunks, loans sized for the chunk actually read.
 | final + CPU share `MAX=5120`; `MAX=5120 NT=64` | | 1308 / 2422 / 3025; 1420 / 2477 / 3018 | long worse |
 | CPU share `MAX=5120 NT=64`; `MAX=9000 NT=64` | | 1419 / 2319 / 2858; 1432 / 2073 / 2586 | 4K +2-3%, long worse |
 
+| final + `STRATA_HANDOFF_PIPE=4` | | 1403 / 2616 / 3244 | noise |
+| final + `STRATA_PREFILL_COPY_WAIT_DEDUPE=1 STRATA_PREFILL_COPY_EVENT_EVERY=4` (2 runs) | | 1437, 1418 / 2676, 2678 / 3199, 3210 | 4.5K and 18K about +2.5%, 36K -0.7%: at the edge of the noise, not adopted; worth a longer test |
+
+The installed config over five runs (three test starts, two of the production server): 4.5K 1376-1394, 17.9K
+2557-2648, 35.8K 3222-3240 tok/s; decode on the production server 116.1 and 116.0.
+
 Not possible here: a Q4_0 draft head (needs the BF16 MTP tensors; Hugging Face is not reachable from this sandbox).
 
 ## The display card's reserve
