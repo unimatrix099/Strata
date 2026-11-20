@@ -59,6 +59,10 @@ Since 12 Oct its context is **262,144 tokens** (the model's maximum): needles 9/
 - `--gpus 1,0`: the card without the desktop runs the first stage; `--vram-reserve-mib 700 --vram-reserve-later-mib
   3072`: the desktop card keeps 3 GB free (with less, the driver moves ~20 GB of Strata's memory to system RAM and
   decoding drops to 15 tok/s - docs/AMD_HIP.md);
+  since 20 Nov the later reserve is 2048 (the desktop held 0.6 GB; 1.5 GB stay free; back to 3072 for a GPU-heavy
+  desktop), with `--prefill 12288`, `STRATA_PREFILL_EQUAL=1`, `STRATA_SPLIT_MTP_BATCH=1`, `STRATA_SPLIT_RING=144`:
+  prompts 4.5K +9%, 18K +22%, 36K +27%, decode unchanged
+  ([bench/results/2026-11-20-autoresearch-prompt-speed](bench/results/2026-11-20-autoresearch-prompt-speed/README.md));
 - `--pipeline-windows 2 --spec 3 --spec-min-p 0.7`, `"draft_vocab": "en"`;
 - `--ple-io ram` (since 09 Oct, evening): the 28.8 GB per-layer embedding table in RAM instead of read from the SSD a
   few rows per token - prompts 4K +22-29%, 32K +9-10%, exact; 15 s to load on a cold start; `ulimit -l` unlimited lets
