@@ -61,3 +61,7 @@ had started fine 4 times before. (3) none of HotRod's own features (low-RAM tier
   requests too (sampled 5-10% below greedy). HotRod's own docs report no such gap on its single RTX 3060 (no split, no pipeline there).
 - Why it matters: the standard-v1 suite and normal chat use temperature 1.0, so HotRod's greedy numbers (100-106) overstate what a
   chat client sees on this box (~55-58). Where in HotRod's code the gate sits was not located (no pipeline/temperature match in src/program, serve).
+
+## Follow-up: long-context decode
+
+See `../2026-11-21-long-context-decode.md` (decode 113 tok/s at ~127K, 104 tok/s at ~242K, max context 262,144).
