@@ -59,6 +59,10 @@ Since 12 Oct its context is **262,144 tokens** (the model's maximum): needles 9/
 - `--gpus 1,0`: the card without the desktop runs the first stage; `--vram-reserve-mib 700 --vram-reserve-later-mib
   3072`: the desktop card keeps 3 GB free (with less, the driver moves ~20 GB of Strata's memory to system RAM and
   decoding drops to 15 tok/s - docs/AMD_HIP.md);
+  since 20 Nov the later reserve is 2048 (the desktop held 0.6 GB; 1.5 GB stay free; back to 3072 for a GPU-heavy
+  desktop), with `--prefill 12288`, `STRATA_PREFILL_EQUAL=1`, `STRATA_SPLIT_MTP_BATCH=1`, `STRATA_SPLIT_RING=144`:
+  prompts 4.5K +9%, 18K +22%, 36K +27%, decode unchanged
+  ([bench/results/2026-11-20-autoresearch-prompt-speed](bench/results/2026-11-20-autoresearch-prompt-speed/README.md));
 - `--pipeline-windows 2 --spec 3 --spec-min-p 0.7`, `"draft_vocab": "en"`;
 - `--ple-io ram` (since 09 Oct, evening): the 28.8 GB per-layer embedding table in RAM instead of read from the SSD a
   few rows per token - prompts 4K +22-29%, 32K +9-10%, exact; 15 s to load on a cold start; `ulimit -l` unlimited lets
@@ -304,6 +308,7 @@ card: the launch gaps equal the bandwidth floor), prompt reading at a third of t
 | 30 Oct | upstream 0.2.8 merged (branch `merge-upstream-0.2.8`); the hand-over rows dropped for upstream's `STRATA_SPLIT_OVERLAP=1` and `STRATA_MTP_HIP_PRIO=1` | builds; same text as upstream (not as the 12 Oct engine: upstream's change); decode parity (110.8 vs 111.9 tok/s); smoke 7/7; known answers 79/79 (old 77/79) |
 | 12 Nov | the merge installed: `main` fast-forwarded and pushed, `engine/strata-prod-1112`, `STRATA_MTP_HIP_PRIO=1` in the production config | started 12 Nov (the GPU back): `smoke.py` on the production config 7/7, 0 engine errors, decode 110-117 tok/s, 4.9K prompt 1279 tok/s; serving on 8080 |
 | 20 Nov | upstream 0.2.17 (engine 0.1.63, 3,351 commits since 0.2.8; layout move `src/` -> `engine/src/`, `serve/`, `data/`, `tools/` -> `terminal/`) merged (branch `merge-upstream-0.2.17`, 13 conflicts), `main` fast-forwarded and pushed, installed as `engine/strata-prod-1120`; production config and `run-swift-iq3_s.sh` now use `terminal/serve/server.py` and the `terminal/` data paths (backups `.before-0.2.17`) | against the 12 Nov engine, two interleaved rounds: prompts 4K 1,142 -> 1,200 tok/s, 16K 2,205 -> 2,260; greedy decode median 109-116 -> 114-119; plain upstream without the fork's patches decodes 3-8% slower (106 tok/s), so the fork's changes still pay; sanity 12/12, known answers 62/63 math + 16/16 code, `smoke.py` 7/7, 0 engine errors, decode 104-120, 4.9K prompt 1330 tok/s ([bench/results/2026-11-20-merge-upstream-0.2.17](bench/results/2026-11-20-merge-upstream-0.2.17)) |
+| 20 Nov | autoresearch loop on the installed 0.2.17 engine (37 fresh-server runs, no code change): five settings into the production config - `STRATA_SPLIT_MTP_BATCH=1`, `--vram-reserve-later-mib 2048`, `--prefill 12288` + `STRATA_PREFILL_EQUAL=1`, `STRATA_SPLIT_RING=144` (backup `.before-ar1120`) | prompts 4.5K 1,278 -> 1,385, 18K 2,115 -> 2,610, 36K 2,537 -> 3,232 tok/s (+9 / +22 / +27%), 112K at 3,634; decode unchanged (116); needles to 112K 12/12 ([bench/results/2026-11-20-autoresearch-prompt-speed](bench/results/2026-11-20-autoresearch-prompt-speed/README.md)) |
 
 ## The merge of upstream 0.2.8 (30 Oct)
 

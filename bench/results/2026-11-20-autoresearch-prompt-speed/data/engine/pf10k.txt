@@ -1,0 +1,59 @@
+strata generate: layer split auto: K=26 - predicted 29.8 ms per decode window; the caches hold 20162 of 24576 profiled pairs (~99.5% of the routed mass), best of 46 placements
+strata generate: expert cache 11046 slots, 20.08 GiB of VRAM; policy is
+strata generate: layer split: CUDA1 runs layers 26-47, expert cache 8803 slots (17.68 GiB), 8803 of its 11264 profiled pairs; slot 0 verified
+strata trace: read 50 tokens (windows) in 453.7 ms
+strata trace: checkpoint at 50: sync 0.2 ms, save 80.2 ms (2 stage(s))
+strata trace: read 4 tokens (windows) in 35.2 ms
+strata trace: prompt done (slots refilled) -1 -1 576.3 ms
+strata serve: prompt 55 tokens = 0 reused + 55 read in 576 ms (95.4 tok/s), 16 generated in 201 ms (79.5 tok/s), drafts accepted 5 of 10, 1 checkpoints
+strata trace: lent 2219 slots for 4608 tokens in 0.3 ms
+strata trace: prompt chunk 0 of 4523 stage [0,26) 0.0 ms
+strata trace: prompt chunk 0 of 4523 stage [26,48) 1329.4 ms
+strata serve: draft layer prompt K/V batched on CUDA1 (E-9 on the layer split, K/V mode 2)
+strata trace: read 4523 tokens (batched) in 2843.0 ms
+strata trace: checkpoint at 4523: sync 0.0 ms, save 75.2 ms (2 stage(s))
+strata trace: refill start 1177 -1 3830.4 ms
+strata trace: refill start 1042 -1 3831.8 ms
+strata trace: refilled 2219 slots on 2 stage(s) in 334.6 ms
+strata trace: read 4 tokens (windows) in 33.0 ms
+strata trace: prompt done (slots refilled) -1 -1 4198.1 ms
+strata serve: prompt 4528 tokens = 0 reused + 4528 read in 3415 ms (1325.9 tok/s), 8 generated in 96 ms (83.3 tok/s), drafts accepted 4 of 5, 1 checkpoints
+strata trace: lent 2219 slots for 4608 tokens in 0.3 ms
+strata trace: prompt chunk 0 of 4523 stage [0,26) 3536.5 ms
+strata trace: prompt chunk 0 of 4523 stage [26,48) 4695.8 ms
+strata trace: read 4523 tokens (batched) in 2648.2 ms
+strata trace: checkpoint at 4523: sync 0.0 ms, save 72.4 ms (2 stage(s))
+strata trace: refill start 1177 -1 7170.8 ms
+strata trace: refill start 1042 -1 7172.2 ms
+strata trace: refilled 2219 slots on 2 stage(s) in 334.6 ms
+strata trace: read 4 tokens (windows) in 32.6 ms
+strata trace: prompt done (slots refilled) -1 -1 7538.0 ms
+strata serve: prompt 4528 tokens = 0 reused + 4528 read in 3239 ms (1397.9 tok/s), 8 generated in 83 ms (96.3 tok/s), drafts accepted 4 of 5, 1 checkpoints
+strata trace: lent 3757 slots for 10240 tokens in 0.3 ms
+strata trace: prompt chunk 0 of 17937 stage [0,26) 6874.8 ms
+strata trace: prompt chunk 10240 of 17937 stage [0,26) 9099.4 ms
+strata trace: prompt chunk 0 of 10240 stage [26,48) 9100.6 ms
+strata trace: prompt chunk 0 of 7697 stage [26,48) 11364.6 ms
+strata trace: read 17937 tokens (batched) in 6565.5 ms
+strata trace: refill start 1963 -1 14353.9 ms
+strata trace: refill start 1794 -1 14358.1 ms
+strata trace: refilled 3757 slots on 2 stage(s) in 568.3 ms
+strata trace: read 4 tokens (windows) in 36.8 ms
+strata trace: prompt done (slots refilled) -1 -1 14959.1 ms
+strata serve: prompt 17942 tokens = 0 reused + 17942 read in 7327 ms (2448.7 tok/s), 8 generated in 99 ms (81.0 tok/s), drafts accepted 4 of 6, 1 checkpoints
+strata trace: lent 3757 slots for 10240 tokens in 0.3 ms
+strata trace: prompt chunk 0 of 35815 stage [0,26) 14356.5 ms
+strata trace: prompt chunk 10240 of 35815 stage [0,26) 16587.5 ms
+strata trace: prompt chunk 0 of 10240 stage [26,48) 16589.6 ms
+strata trace: prompt chunk 20480 of 35815 stage [0,26) 18876.2 ms
+strata trace: prompt chunk 0 of 10240 stage [26,48) 18876.8 ms
+strata trace: prompt chunk 30720 of 35815 stage [0,26) 21274.4 ms
+strata trace: prompt chunk 0 of 10240 stage [26,48) 21276.6 ms
+strata trace: prompt chunk 0 of 5095 stage [26,48) 23690.7 ms
+strata trace: read 35815 tokens (batched) in 11228.8 ms
+strata trace: refill start 1963 -1 26499.0 ms
+strata trace: refill start 1794 -1 26501.5 ms
+strata trace: refilled 3757 slots on 2 stage(s) in 567.3 ms
+strata trace: read 4 tokens (windows) in 38.6 ms
+strata trace: prompt done (slots refilled) -1 -1 27104.9 ms
+strata serve: prompt 35820 tokens = 0 reused + 35820 read in 12028 ms (2978.0 tok/s), 8 generated in 91 ms (87.8 tok/s), drafts accepted 4 of 5, 2 checkpoints
