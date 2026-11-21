@@ -89,3 +89,34 @@ serving, at 2048 it has 1.5 GiB free and GTT use is unchanged (410 MiB). If the 
 2. The checkpoint after the batched read (70 ms) could overlap the refill.
 3. `--prefill-pipe` on a ceiling above the planned chunk: size the loan for the planned chunk (today the ceiling).
 4. A smaller prompt-path loan per token (about 0.27 slots = 0.6 MB a token) would cut streamed bytes directly.
+
+## Files
+
+- `results.tsv`: one row per run (time, label, decode median / mean, prompt tok/s at 4.5K / 17.9K / 35.8K; 0 = not measured in that run).
+- `data/runs.txt`: the queues' printed output, every run in order (the per-prompt lines, GTT and VRAM after each run, cache slots).
+- `data/configs/<label>.json`: the exact server config of each run (the production config plus that run's changes).
+- `data/engine/<label>.txt`: the engine's timing and trace lines of the runs the text above cites (`pftiming`, `trace`,
+  `decprof`, `F4-eq12k`, `final-1`, ...).
+- `data/production-config-before.json` / `-after.json`: `strata-swift-iq3_s-tuned.json` before and after the loop.
+- `scripts/`: `exp.sh` (one run), `bench.py`, `validate.py`, `stop.sh`, and the queues `q*.sh` as they ran.
+
+## Doing it again
+
+1. Stop production (`scripts/stop.sh 8080`): the experiments need both cards.
+2. `scripts/exp.sh LABEL EXE "ENV=1 OTHER=UNSET" "--flag value --drop=--flag" REPS all|decode|prefill` starts a fresh server
+   on port 8091 from the production config with those changes, runs `bench.py` and stops it (about 2.5 min for prompts,
+   3.5 min with decode). `PF_LONG=1` reads each prompt size two or three times and reports medians; `VALIDATE=1` runs
+   `validate.py` first. The scripts hold this PC's paths (`/workspace/ar1120`, `/workspace/Strata`).
+3. Put a whole series in ONE script and run it with `setsid nohup`. Do not let one queue wait for another's process: a
+   finished queue stays as a zombie that `ps`, `pgrep` and `kill -0` still see, and two queues then start engines at once.
+4. Decode: a single run proves nothing under about 5% (four starts of the same config: 110.2-119.7). Alternate starts,
+   or compare ms per window with `--adapt-every 0` (`STRATA_DECODE_TIMING=1`). Prompts: 17.9K and 35.8K repeat within
+   about 1-2%, 4.5K within about 3%.
+5. Before a setting goes into production: `validate.py` (needles to 112K, known answers), the engine log free of errors,
+   `mem_info_gtt_used` of both cards unchanged; for a larger change the full `longctx.py` suite and `smoke_0217.py`
+   (neither was run in this loop).
+6. Restart production: `./run-swift-iq3_s.sh` (setsid nohup). Rollback of this loop: copy
+   `strata-swift-iq3_s-tuned.json.before-ar1120` back and restart.
+
+Not changed: the Docker defaults (`tools/docker/rocm.env.example`, `install.sh` still write a 3072 MiB later reserve and
+none of the four other settings); they were not measured in the container on the host.

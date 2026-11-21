@@ -1,0 +1,94 @@
+strata generate: layer split auto: K=26 - predicted 29.9 ms per decode window; the caches hold 19668 of 24576 profiled pairs (~99.4% of the routed mass), best of 46 placements
+strata generate: expert cache 11046 slots, 20.08 GiB of VRAM; policy is
+strata generate: layer split: CUDA1 runs layers 26-47, expert cache 8312 slots (16.68 GiB), 8312 of its 11264 profiled pairs; slot 0 verified
+strata serve: prompt chunk auto: 8192 tokens, a 96-slot ring
+strata trace: read 50 tokens (windows) in 406.1 ms
+strata trace: checkpoint at 50: sync 0.2 ms, save 77.7 ms (2 stage(s))
+strata trace: read 4 tokens (windows) in 35.5 ms
+strata trace: prompt done (slots refilled) -1 -1 528.0 ms
+strata serve: prompt 55 tokens = 0 reused + 55 read in 528 ms (104.2 tok/s), 16 generated in 152 ms (105.6 tok/s), drafts accepted 7 of 8, 1 checkpoints
+strata trace: lent 2240 slots for 4608 tokens in 0.2 ms
+strata trace: prompt chunk 0 of 4523 stage [0,26) 0.0 ms
+strata prefill timing: 4523 tokens, GPU timeline 1199 ms, wall 1226 ms, host staging 55 ms: embed+steps 2 (0.1%) hc read 2 (0.2%) gdn 137 (11.4%) qsa proj 51 (4.3%) qsa indexer 0 (0.0%) qsa select 10 (0.8%) qsa attn 48 (4.0%) router+shared 27 (2.2%) gather 4 (0.3%) wait copy 167 (13.9%) gemm gate/up 319 (26.6%) combine 19 (1.6%) ple 38 (3.2%) kv stage 0 (0.0%) gdn conv+gates 15 (1.2%) gdn recurrence 104 (8.7%) gdn out proj 47 (3.9%) hc write 32 (2.7%) hc read: down+silu 108 (9.0%) hc read: up 24 (2.0%) hc read: inject 11 (0.9%) hc read: mix 33 (2.7%) qsa: indexer gemms 2 (0.2%) qsa: norm/rope/kv append/q prep 0 (0.0%)
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 0 ms, waiting for each chunk 0 ms, after each chunk (the draft layer, progress) 0 ms, PLE 14 ms
+strata trace: prompt chunk 0 of 4523 stage [26,48) 1227.1 ms
+strata serve: draft layer prompt K/V batched on CUDA1 (E-9 on the layer split, K/V mode 2)
+strata prefill timing: 4523 tokens, GPU timeline 1661 ms, wall 1692 ms, host staging 51 ms: embed+steps 29 (1.7%) hc read 5 (0.3%) gdn 112 (6.7%) qsa proj 74 (4.5%) qsa indexer 2 (0.2%) qsa select 28 (1.7%) qsa attn 49 (3.0%) router+shared 39 (2.4%) gather 11 (0.7%) wait copy 423 (25.5%) gemm gate/up 549 (33.0%) combine 20 (1.2%) ple 0 (0.0%) kv stage 0 (0.0%) gdn conv+gates 17 (1.1%) gdn recurrence 87 (5.3%) gdn out proj 46 (2.8%) hc write 32 (1.9%) hc read: down+silu 52 (3.1%) hc read: up 26 (1.6%) hc read: inject 17 (1.0%) hc read: mix 37 (2.3%) qsa: indexer gemms 3 (0.2%) qsa: norm/rope/kv append/q prep 1 (0.1%)
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 0 ms, waiting for each chunk 1529 ms, after each chunk (the draft layer, progress) 29 ms, PLE 0 ms
+strata trace: read 4523 tokens (batched) in 2918.7 ms
+strata trace: checkpoint at 4523: sync 0.0 ms, save 70.3 ms (2 stage(s))
+strata trace: refill start 1177 -1 3806.1 ms
+strata trace: refill start 1063 -1 3807.4 ms
+strata trace: refilled 2240 slots on 2 stage(s) in 334.6 ms
+strata trace: read 4 tokens (windows) in 31.7 ms
+strata trace: prompt done (slots refilled) -1 -1 4172.5 ms
+strata serve: prompt 4528 tokens = 0 reused + 4528 read in 3487 ms (1298.4 tok/s), 8 generated in 86 ms (93.1 tok/s), drafts accepted 4 of 5, 1 checkpoints
+strata trace: lent 2240 slots for 4608 tokens in 0.1 ms
+strata trace: prompt chunk 0 of 4523 stage [0,26) 3595.7 ms
+strata prefill timing: 4523 tokens, GPU timeline 1132 ms, wall 1160 ms, host staging 70 ms: embed+steps 2 (0.1%) hc read 2 (0.2%) gdn 120 (10.6%) qsa proj 51 (4.5%) qsa indexer 0 (0.0%) qsa select 9 (0.8%) qsa attn 48 (4.2%) router+shared 27 (2.4%) gather 4 (0.3%) wait copy 167 (14.8%) gemm gate/up 317 (28.0%) combine 19 (1.7%) ple 75 (6.6%) kv stage 0 (0.0%) gdn conv+gates 15 (1.3%) gdn recurrence 103 (9.1%) gdn out proj 47 (4.2%) hc write 32 (2.8%) hc read: down+silu 24 (2.1%) hc read: up 24 (2.1%) hc read: inject 11 (1.0%) hc read: mix 33 (2.9%) qsa: indexer gemms 2 (0.2%) qsa: norm/rope/kv append/q prep 0 (0.0%)
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 0 ms, waiting for each chunk 0 ms, after each chunk (the draft layer, progress) 0 ms, PLE 90 ms
+strata trace: prompt chunk 0 of 4523 stage [26,48) 4755.8 ms
+strata prefill timing: 4523 tokens, GPU timeline 1625 ms, wall 1656 ms, host staging 71 ms: embed+steps 42 (2.6%) hc read 5 (0.3%) gdn 101 (6.2%) qsa proj 76 (4.7%) qsa indexer 2 (0.1%) qsa select 28 (1.7%) qsa attn 48 (3.0%) router+shared 38 (2.3%) gather 11 (0.7%) wait copy 405 (24.9%) gemm gate/up 549 (33.8%) combine 20 (1.2%) ple 0 (0.0%) kv stage 0 (0.0%) gdn conv+gates 17 (1.0%) gdn recurrence 92 (5.6%) gdn out proj 47 (2.9%) hc write 35 (2.1%) hc read: down+silu 30 (1.8%) hc read: up 26 (1.6%) hc read: inject 17 (1.0%) hc read: mix 34 (2.1%) qsa: indexer gemms 3 (0.2%) qsa: norm/rope/kv append/q prep 1 (0.1%)
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 0 ms, waiting for each chunk 1586 ms, after each chunk (the draft layer, progress) 30 ms, PLE 0 ms
+strata trace: read 4523 tokens (batched) in 2816.3 ms
+strata trace: checkpoint at 4523: sync 0.0 ms, save 70.1 ms (2 stage(s))
+strata trace: refill start 1177 -1 7300.2 ms
+strata trace: refill start 1063 -1 7301.6 ms
+strata trace: refilled 2240 slots on 2 stage(s) in 334.6 ms
+strata trace: read 4 tokens (windows) in 32.8 ms
+strata trace: prompt done (slots refilled) -1 -1 7667.7 ms
+strata serve: prompt 4528 tokens = 0 reused + 4528 read in 3404 ms (1330.1 tok/s), 8 generated in 96 ms (83.1 tok/s), drafts accepted 4 of 5, 1 checkpoints
+strata trace: lent 3206 slots for 8192 tokens in 0.2 ms
+strata trace: prompt chunk 0 of 17937 stage [0,26) 7112.7 ms
+strata trace: prompt chunk 8192 of 17937 stage [0,26) 8929.7 ms
+strata trace: prompt chunk 0 of 8192 stage [26,48) 8930.8 ms
+strata prefill timing: 8192 tokens, GPU timeline 2066 ms, wall 2118 ms, host staging 95 ms: embed+steps 74 (3.6%) hc read 5 (0.3%) gdn 171 (8.3%) qsa proj 111 (5.4%) qsa indexer 2 (0.1%) qsa select 53 (2.6%) qsa attn 100 (4.9%) router+shared 49 (2.4%) gather 10 (0.5%) wait copy 275 (13.3%) gemm gate/up 721 (34.9%) combine 32 (1.5%) ple 0 (0.0%) kv stage 1 (0.0%) gdn conv+gates 27 (1.3%) gdn recurrence 135 (6.5%) gdn out proj 69 (3.3%) hc write 64 (3.1%) hc read: down+silu 44 (2.1%) hc read: up 40 (2.0%) hc read: inject 21 (1.0%) hc read: mix 56 (2.7%) qsa: indexer gemms 5 (0.2%) qsa: norm/rope/kv append/q prep 2 (0.1%)
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 0 ms, waiting for each chunk 1960 ms, after each chunk (the draft layer, progress) 52 ms, PLE 0 ms
+strata trace: prompt chunk 16384 of 17937 stage [0,26) 11049.7 ms
+strata trace: prompt chunk 0 of 8192 stage [26,48) 11053.0 ms
+strata prefill timing: 8192 tokens, GPU timeline 2114 ms, wall 2207 ms, host staging 119 ms: embed+steps 72 (3.4%) hc read 4 (0.2%) gdn 168 (8.0%) qsa proj 108 (5.1%) qsa indexer 2 (0.1%) qsa select 79 (3.7%) qsa attn 114 (5.4%) router+shared 48 (2.3%) gather 9 (0.4%) wait copy 278 (13.2%) gemm gate/up 720 (34.1%) combine 33 (1.5%) ple 0 (0.0%) kv stage 13 (0.6%) gdn conv+gates 27 (1.3%) gdn recurrence 136 (6.5%) gdn out proj 68 (3.2%) hc write 65 (3.1%) hc read: down+silu 44 (2.1%) hc read: up 40 (1.9%) hc read: inject 20 (1.0%) hc read: mix 57 (2.7%) qsa: indexer gemms 4 (0.2%) qsa: norm/rope/kv append/q prep 2 (0.1%)
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 3 ms, waiting for each chunk 2003 ms, after each chunk (the draft layer, progress) 93 ms, PLE 0 ms
+strata prefill timing: 17937 tokens, GPU timeline 4995 ms, wall 6148 ms, host staging 136 ms: embed+steps 423 (8.5%) hc read 5 (0.1%) gdn 454 (9.1%) qsa proj 193 (3.9%) qsa indexer 1 (0.0%) qsa select 92 (1.8%) qsa attn 235 (4.7%) router+shared 106 (2.1%) host grouping 228 (4.6%) gather 11 (0.2%) wait copy 743 (14.9%) dequant 3 (0.1%) gemm gate/up 1078 (21.6%) combine 79 (1.6%) ple 207 (4.1%) kv stage 45 (0.9%) gdn conv+gates 60 (1.2%) gdn recurrence 371 (7.4%) gdn out proj 168 (3.4%) hc write 135 (2.7%) hc read: down+silu 99 (2.0%) hc read: up 87 (1.7%) hc read: inject 39 (0.8%) hc read: mix 127 (2.5%) qsa: indexer gemms 6 (0.1%) qsa: norm/rope/kv append/q prep 1 (0.0%)
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 1 ms, waiting for each chunk 0 ms, after each chunk (the draft layer, progress) 0 ms, PLE 229 ms
+strata trace: prompt chunk 0 of 1553 stage [26,48) 13261.9 ms
+strata prefill timing: 1553 tokens, GPU timeline 958 ms, wall 967 ms, host staging 136 ms: embed+steps 9 (0.9%) hc read 0 (0.0%) gdn 45 (4.7%) qsa proj 37 (3.9%) qsa indexer 0 (0.0%) qsa select 14 (1.5%) qsa attn 20 (2.1%) router+shared 22 (2.3%) host grouping 77 (8.1%) gather 12 (1.2%) wait copy 463 (48.3%) dequant 7 (0.7%) gemm gate/up 124 (13.0%) combine 13 (1.3%) ple 0 (0.0%) kv stage 15 (1.5%) gdn conv+gates 3 (0.3%) gdn recurrence 23 (2.4%) gdn out proj 30 (3.1%) hc write 8 (0.9%) hc read: down+silu 11 (1.1%) hc read: up 8 (0.8%) hc read: inject 5 (0.5%) hc read: mix 10 (1.1%) qsa: indexer gemms 1 (0.1%) qsa: norm/rope/kv append/q prep 0 (0.0%)
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 0 ms, waiting for each chunk 12 ms, after each chunk (the draft layer, progress) 9 ms, PLE 0 ms
+strata trace: read 17937 tokens (batched) in 7116.5 ms
+strata trace: checkpoint at 17937: sync 0.0 ms, save 74.0 ms (2 stage(s))
+strata trace: refill start 1677 -1 15121.1 ms
+strata trace: refill start 1529 -1 15123.3 ms
+strata trace: refilled 3206 slots on 2 stage(s) in 480.6 ms
+strata trace: read 4 tokens (windows) in 37.2 ms
+strata trace: prompt done (slots refilled) -1 -1 15638.9 ms
+strata serve: prompt 17942 tokens = 0 reused + 17942 read in 7860 ms (2282.7 tok/s), 8 generated in 85 ms (94.4 tok/s), drafts accepted 4 of 4, 2 checkpoints
+strata trace: lent 3206 slots for 8192 tokens in 0.1 ms
+strata trace: prompt chunk 0 of 35813 stage [0,26) 15184.1 ms
+strata trace: prompt chunk 8192 of 35813 stage [0,26) 17199.8 ms
+strata trace: prompt chunk 0 of 8192 stage [26,48) 17201.2 ms
+strata prefill timing: 8192 tokens, GPU timeline 2069 ms, wall 2106 ms, host staging 162 ms: embed+steps 74 (3.6%) hc read 5 (0.3%) gdn 169 (8.2%) qsa proj 112 (5.4%) qsa indexer 2 (0.1%) qsa select 54 (2.6%) qsa attn 102 (4.9%) router+shared 49 (2.4%) gather 10 (0.5%) wait copy 274 (13.3%) gemm gate/up 721 (34.8%) combine 32 (1.5%) ple 0 (0.0%) kv stage 1 (0.0%) gdn conv+gates 27 (1.3%) gdn recurrence 137 (6.6%) gdn out proj 68 (3.3%) hc write 64 (3.1%) hc read: down+silu 44 (2.1%) hc read: up 41 (2.0%) hc read: inject 20 (1.0%) hc read: mix 56 (2.7%) qsa: indexer gemms 5 (0.2%) qsa: norm/rope/kv append/q prep 2 (0.1%)
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 0 ms, waiting for each chunk 1877 ms, after each chunk (the draft layer, progress) 36 ms, PLE 0 ms
+strata trace: prompt chunk 16384 of 35813 stage [0,26) 19307.9 ms
+strata trace: prompt chunk 0 of 8192 stage [26,48) 19308.4 ms
+strata prefill timing: 8192 tokens, GPU timeline 2104 ms, wall 2197 ms, host staging 190 ms: embed+steps 74 (3.5%) hc read 4 (0.2%) gdn 167 (7.9%) qsa proj 109 (5.2%) qsa indexer 2 (0.1%) qsa select 80 (3.8%) qsa attn 114 (5.4%) router+shared 50 (2.4%) gather 10 (0.5%) wait copy 271 (12.9%) gemm gate/up 719 (34.2%) combine 32 (1.5%) ple 0 (0.0%) kv stage 12 (0.6%) gdn conv+gates 27 (1.3%) gdn recurrence 136 (6.5%) gdn out proj 68 (3.3%) hc write 64 (3.0%) hc read: down+silu 44 (2.1%) hc read: up 40 (1.9%) hc read: inject 20 (1.0%) hc read: mix 57 (2.7%) qsa: indexer gemms 4 (0.2%) qsa: norm/rope/kv append/q prep 1 (0.1%)
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 0 ms, waiting for each chunk 1951 ms, after each chunk (the draft layer, progress) 92 ms, PLE 0 ms
+strata trace: prompt chunk 24576 of 35813 stage [0,26) 21506.1 ms
+strata trace: prompt chunk 0 of 8192 stage [26,48) 21508.0 ms
+strata prefill timing: 8192 tokens, GPU timeline 2182 ms, wall 2236 ms, host staging 215 ms: embed+steps 74 (3.4%) hc read 5 (0.2%) gdn 166 (7.6%) qsa proj 110 (5.0%) qsa indexer 2 (0.1%) qsa select 122 (5.6%) qsa attn 115 (5.3%) router+shared 48 (2.2%) gather 10 (0.4%) wait copy 271 (12.4%) gemm gate/up 720 (33.0%) combine 32 (1.5%) ple 0 (0.0%) kv stage 42 (1.9%) gdn conv+gates 27 (1.2%) gdn recurrence 138 (6.3%) gdn out proj 69 (3.1%) hc write 64 (2.9%) hc read: down+silu 44 (2.0%) hc read: up 40 (1.8%) hc read: inject 21 (0.9%) hc read: mix 57 (2.6%) qsa: indexer gemms 4 (0.2%) qsa: norm/rope/kv append/q prep 1 (0.1%)
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 0 ms, waiting for each chunk 2040 ms, after each chunk (the draft layer, progress) 54 ms, PLE 0 ms
+strata trace: prompt chunk 32768 of 35813 stage [0,26) 23745.0 ms
+strata trace: prompt chunk 0 of 8192 stage [26,48) 23745.6 ms
+strata prefill timing: 8192 tokens, GPU timeline 2212 ms, wall 2303 ms, host staging 238 ms: embed+steps 74 (3.3%) hc read 4 (0.2%) gdn 169 (7.6%) qsa proj 109 (4.9%) qsa indexer 2 (0.1%) qsa select 156 (7.0%) qsa attn 117 (5.3%) router+shared 48 (2.2%) gather 9 (0.4%) wait copy 278 (12.6%) gemm gate/up 714 (32.3%) combine 32 (1.4%) ple 0 (0.0%) kv stage 37 (1.7%) gdn conv+gates 27 (1.2%) gdn recurrence 136 (6.1%) gdn out proj 68 (3.1%) hc write 64 (2.9%) hc read: down+silu 44 (2.0%) hc read: up 40 (1.8%) hc read: inject 21 (0.9%) hc read: mix 57 (2.6%) qsa: indexer gemms 5 (0.2%) qsa: norm/rope/kv append/q prep 2 (0.1%)
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 0 ms, waiting for each chunk 2125 ms, after each chunk (the draft layer, progress) 91 ms, PLE 0 ms
+strata prefill timing: 35813 tokens, GPU timeline 9833 ms, wall 10868 ms, host staging 227 ms: embed+steps 1211 (12.3%) hc read 11 (0.1%) gdn 889 (9.0%) qsa proj 382 (3.9%) qsa indexer 1 (0.0%) qsa select 346 (3.5%) qsa attn 497 (5.1%) router+shared 192 (1.9%) gather 21 (0.2%) wait copy 1084 (11.0%) gemm gate/up 2310 (23.5%) combine 199 (2.0%) ple 334 (3.4%) kv stage 186 (1.9%) gdn conv+gates 121 (1.2%) gdn recurrence 743 (7.6%) gdn out proj 322 (3.3%) hc write 272 (2.8%) hc read: down+silu 195 (2.0%) hc read: up 176 (1.8%) hc read: inject 73 (0.7%) hc read: mix 254 (2.6%) qsa: indexer gemms 13 (0.1%) qsa: norm/rope/kv append/q prep 3 (0.0%)
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 3 ms, waiting for each chunk 0 ms, after each chunk (the draft layer, progress) 0 ms, PLE 381 ms
+strata trace: prompt chunk 0 of 3045 stage [26,48) 26054.2 ms
+strata prefill timing: 3045 tokens, GPU timeline 1762 ms, wall 1783 ms, host staging 260 ms: embed+steps 28 (1.6%) hc read 4 (0.2%) gdn 76 (4.3%) qsa proj 57 (3.2%) qsa indexer 2 (0.1%) qsa select 64 (3.6%) qsa attn 47 (2.6%) router+shared 34 (2.0%) gather 11 (0.6%) wait copy 615 (34.9%) gemm gate/up 541 (30.7%) combine 14 (0.8%) ple 0 (0.0%) kv stage 47 (2.7%) gdn conv+gates 13 (0.7%) gdn recurrence 58 (3.3%) gdn out proj 40 (2.3%) hc write 26 (1.5%) hc read: down+silu 21 (1.2%) hc read: up 18 (1.0%) hc read: inject 13 (0.8%) hc read: mix 29 (1.7%) qsa: indexer gemms 3 (0.2%) qsa: norm/rope/kv append/q prep 1 (0.0%)
+strata prefill timing: host: chunk setup (PLE rows, the expert stream plan) 0 ms, waiting for each chunk 1715 ms, after each chunk (the draft layer, progress) 20 ms, PLE 0 ms
+strata trace: read 35813 tokens (batched) in 12653.4 ms
+strata trace: checkpoint at 35813: sync 0.1 ms, save 70.4 ms (2 stage(s))
+strata trace: refill start 1677 -1 28726.1 ms
+strata trace: refill start 1529 -1 28728.1 ms
+strata trace: refilled 3206 slots on 2 stage(s) in 482.0 ms
+strata trace: read 4 tokens (windows) in 37.3 ms
+strata trace: prompt done (slots refilled) -1 -1 29245.4 ms
+strata serve: prompt 35818 tokens = 0 reused + 35818 read in 13502 ms (2652.8 tok/s), 8 generated in 86 ms (93.5 tok/s), drafts accepted 4 of 4, 3 checkpoints

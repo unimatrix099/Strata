@@ -1,0 +1,175 @@
+## q1.txt
+mtp0 DECODE median 96.4 mean 99.1
+g12dec DECODE median 112.1 mean 112.0
+g12pf PREFILL 4000 prompt_n 4527 1266 tok/s
+g12pf PREFILL 4000 prompt_n 4528 1250 tok/s
+g12pf PREFILL 16000 prompt_n 17942 2129 tok/s
+g12pf PREFILL 32000 prompt_n 35820 2540 tok/s
+pff16 PREFILL 4000 prompt_n 4528 1195 tok/s
+pff16 PREFILL 4000 prompt_n 4528 1218 tok/s
+pff16 PREFILL 16000 prompt_n 17941 2076 tok/s
+pff16 PREFILL 32000 prompt_n 35821 2440 tok/s
+pipe1 PREFILL 4000 prompt_n 4528 1381 tok/s
+pipe1 PREFILL 4000 prompt_n 4528 1286 tok/s
+pipe1 PREFILL 16000 prompt_n 17942 2172 tok/s
+pipe1 PREFILL 32000 prompt_n 35820 2595 tok/s
+pipe3000 PREFILL 4000 prompt_n 4528 1239 tok/s
+pipe3000 PREFILL 4000 prompt_n 4528 1288 tok/s
+pipe3000 PREFILL 16000 prompt_n 17942 2122 tok/s
+pipe3000 PREFILL 32000 prompt_n 35821 2556 tok/s
+help PREFILL 4000 prompt_n 4527 1383 tok/s
+help PREFILL 4000 prompt_n 4527 1290 tok/s
+help PREFILL 16000 prompt_n 17941 2125 tok/s
+help PREFILL 32000 prompt_n 35820 2526 tok/s
+routed PREFILL 4000 prompt_n 4527 1328 tok/s
+routed PREFILL 4000 prompt_n 4528 1340 tok/s
+routed PREFILL 16000 prompt_n 17942 2134 tok/s
+routed PREFILL 32000 prompt_n 35820 2581 tok/s
+base-2 DECODE median 110.2 mean 111.5
+base-2 PREFILL 4000 prompt_n 4528 1279 tok/s
+base-2 PREFILL 4000 prompt_n 4528 1276 tok/s
+base-2 PREFILL 16000 prompt_n 17942 2158 tok/s
+base-2 PREFILL 32000 prompt_n 35821 2547 tok/s
+Q1 DONE
+## q11.txt
+pf10k PREFILL 4000 prompt_n 4528 1326 tok/s
+pf10k PREFILL 4000 prompt_n 4528 1398 tok/s
+pf10k PREFILL 16000 prompt_n 17942 2449 tok/s
+pf10k PREFILL 32000 prompt_n 35820 2978 tok/s
+pf10k GTT MiB: 332 vram 23876 | 410 vram 23024 |  expert cache 11046 slots expert cache 8803 slots 
+shnt64 PREFILL 4000 prompt_n 4528 1419 tok/s
+shnt64 PREFILL 4000 prompt_n 4528 1393 tok/s
+shnt64 PREFILL 16000 prompt_n 17941 2319 tok/s
+shnt64 PREFILL 32000 prompt_n 35821 2858 tok/s
+shnt64 GTT MiB: 332 vram 23876 | 410 vram 23025 |  expert cache 11046 slots expert cache 8803 slots 
+ring192 PREFILL 4000 prompt_n 4528 1350 tok/s
+ring192 PREFILL 4000 prompt_n 4528 1368 tok/s
+ring192 PREFILL 16000 prompt_n 17942 2468 tok/s
+ring192 PREFILL 32000 prompt_n 35821 2948 tok/s
+ring192 GTT MiB: 332 vram 23876 | 410 vram 23024 |  expert cache 11046 slots expert cache 8803 slots 
+shnt64all PREFILL 4000 prompt_n 4528 1417 tok/s
+shnt64all PREFILL 4000 prompt_n 4528 1446 tok/s
+shnt64all PREFILL 16000 prompt_n 17942 2073 tok/s
+shnt64all PREFILL 32000 prompt_n 35821 2586 tok/s
+shnt64all PREFILL median {4000: 1432, 16000: 2073, 32000: 2586}
+shnt64all GTT MiB: 332 vram 23876 | 410 vram 23024 |  expert cache 11046 slots expert cache 8803 slots 
+pf12k PREFILL 4000 prompt_n 4528 1379 tok/s
+pf12k PREFILL 4000 prompt_n 4528 1401 tok/s
+pf12k PREFILL 16000 prompt_n 17942 2429 tok/s
+pf12k PREFILL 32000 prompt_n 35821 3111 tok/s
+pf12k PREFILL median {4000: 1390, 16000: 2429, 32000: 3111}
+pf12k GTT MiB: 332 vram 23877 | 406 vram 23025 |  expert cache 11046 slots expert cache 8803 slots 
+## q12.txt
+F2-pf16k PREFILL 4000 prompt_n 4527 1503 tok/s
+F2-pf16k PREFILL 4000 prompt_n 4528 1400 tok/s
+F2-pf16k PREFILL 4000 prompt_n 4527 1397 tok/s
+F2-pf16k PREFILL 16000 prompt_n 17942 2222 tok/s
+F2-pf16k PREFILL 16000 prompt_n 17942 2207 tok/s
+F2-pf16k PREFILL 32000 prompt_n 35821 2899 tok/s
+F2-pf16k PREFILL 32000 prompt_n 35821 2882 tok/s
+F2-pf16k PREFILL median {4000: 1400, 16000: 2214, 32000: 2890}
+F2-pf16k GTT MiB: 332 vram 23878 | 406 vram 23027 |  expert cache 11046 slots expert cache 8803 slots 
+F0-A PREFILL 4000 prompt_n 4528 1359 tok/s
+F0-A PREFILL 4000 prompt_n 4528 1399 tok/s
+F0-A PREFILL 4000 prompt_n 4528 1398 tok/s
+F0-A PREFILL 16000 prompt_n 17942 2418 tok/s
+F0-A PREFILL 16000 prompt_n 17942 2388 tok/s
+F0-A PREFILL 32000 prompt_n 35821 2868 tok/s
+F0-A PREFILL 32000 prompt_n 35820 2860 tok/s
+F0-A PREFILL median {4000: 1398, 16000: 2403, 32000: 2864}
+F0-A GTT MiB: 332 vram 23877 | 406 vram 23025 |  expert cache 11046 slots expert cache 8803 slots 
+F1-pf12k PREFILL 4000 prompt_n 4527 1374 tok/s
+F1-pf12k PREFILL 4000 prompt_n 4527 1396 tok/s
+F1-pf12k PREFILL 4000 prompt_n 4527 1398 tok/s
+F1-pf12k PREFILL 16000 prompt_n 17942 2425 tok/s
+F1-pf12k PREFILL 16000 prompt_n 17942 2406 tok/s
+F1-pf12k PREFILL 32000 prompt_n 35821 3094 tok/s
+F1-pf12k PREFILL 32000 prompt_n 35820 3076 tok/s
+F1-pf12k PREFILL median {4000: 1396, 16000: 2415, 32000: 3085}
+F1-pf12k GTT MiB: 332 vram 23877 | 406 vram 23025 |  expert cache 11046 slots expert cache 8803 slots 
+## q13.txt
+F4-eq12k PREFILL 4000 prompt_n 4527 1506 tok/s
+F4-eq12k PREFILL 4000 prompt_n 4527 1400 tok/s
+F4-eq12k PREFILL 4000 prompt_n 4528 1400 tok/s
+F4-eq12k PREFILL 16000 prompt_n 17942 2590 tok/s
+F4-eq12k PREFILL 16000 prompt_n 17942 2567 tok/s
+F4-eq12k PREFILL 32000 prompt_n 35820 3115 tok/s
+F4-eq12k PREFILL 32000 prompt_n 35821 3090 tok/s
+F4-eq12k PREFILL median {4000: 1400, 16000: 2578, 32000: 3102}
+F4-eq12k GTT MiB: 332 vram 23877 | 406 vram 23025 |  expert cache 11046 slots expert cache 8803 slots 
+F5-eq14k PREFILL 4000 prompt_n 4527 1371 tok/s
+F5-eq14k PREFILL 4000 prompt_n 4528 1398 tok/s
+F5-eq14k PREFILL 4000 prompt_n 4528 1395 tok/s
+F5-eq14k PREFILL 16000 prompt_n 17942 2588 tok/s
+F5-eq14k PREFILL 16000 prompt_n 17941 2566 tok/s
+F5-eq14k PREFILL 32000 prompt_n 35821 3121 tok/s
+F5-eq14k PREFILL 32000 prompt_n 35821 3043 tok/s
+F5-eq14k PREFILL median {4000: 1395, 16000: 2577, 32000: 3082}
+F5-eq14k GTT MiB: 332 vram 23877 | 406 vram 23026 |  expert cache 11046 slots expert cache 8803 slots 
+Q13 DONE
+## q14.txt
+final-1 needles 8000: 3/3  prompt_n 9048 1895 tok/s, decode 120.2 tok/s (159 tok)
+final-1 needles 20000: 3/3  prompt_n 22463 2816 tok/s, decode 123.0 tok/s (185 tok)
+final-1 needles 40000: 3/3  prompt_n 44807 3300 tok/s, decode 130.5 tok/s (160 tok)
+final-1 needles 100000: 3/3  prompt_n 111878 3554 tok/s, decode 132.8 tok/s (172 tok)
+final-1 VALIDATE 18/18
+final-1 DECODE median 112.0 mean 114.6
+final-1 PREFILL median {4000: 1384, 16000: 2578, 32000: 3107}
+final-1 GTT MiB: 332 vram 23878 | 410 vram 23027 |  expert cache 11046 slots expert cache 8803 slots 
+base-4 DECODE median 113.8 mean 114.4
+base-4 GTT MiB: 332 vram 23875 | 410 vram 22000 |  expert cache 11046 slots expert cache 8312 slots 
+final-2 DECODE median 115.4 mean 117.2
+final-2 GTT MiB: 332 vram 23876 | 410 vram 23025 |  expert cache 11046 slots expert cache 8803 slots 
+base-5 DECODE median 119.7 mean 117.0
+base-5 GTT MiB: 332 vram 23876 | 408 vram 23025 |  expert cache 11046 slots expert cache 8803 slots 
+final-3 DECODE median 112.9 mean 114.5
+final-3 GTT MiB: 332 vram 23876 | 410 vram 23025 |  expert cache 11046 slots expert cache 8803 slots 
+Q14 DONE
+## q15.txt
+F6-shmax5120 PREFILL median {4000: 1308, 16000: 2422, 32000: 3025}
+F6-shmax5120 GTT MiB: 332 vram 23877 | 410 vram 22980 |  expert cache 11046 slots expert cache 8803 slots 
+F7-shmax5120-nt64 PREFILL median {4000: 1420, 16000: 2477, 32000: 3018}
+F7-shmax5120-nt64 GTT MiB: 332 vram 23877 | 410 vram 23011 |  expert cache 11046 slots expert cache 8803 slots 
+Q15 DONE
+## q23.txt
+pftiming PREFILL 4000 prompt_n 4528 1258 tok/s
+pftiming PREFILL 4000 prompt_n 4528 1281 tok/s
+pftiming PREFILL 16000 prompt_n 17942 2159 tok/s
+pftiming PREFILL 32000 prompt_n 35820 2532 tok/s
+decprof DECODE median 89.5 mean 92.6
+Q2 DONE
+## q4.txt
+splitmtp DECODE median 116.8 mean 115.9
+splitmtp PREFILL 4000 prompt_n 4528 1313 tok/s
+splitmtp PREFILL 4000 prompt_n 4527 1248 tok/s
+splitmtp PREFILL 16000 prompt_n 17942 2273 tok/s
+splitmtp PREFILL 32000 prompt_n 35821 2652 tok/s
+splitmtp GTT MiB: 332 vram 23876 | 418 vram 22001 |  expert cache 11046 slots expert cache 8312 slots 
+spec4 DECODE median 109.4 mean 108.7
+spec4 GTT MiB: 332 vram 23888 | 414 vram 22013 |  expert cache 11046 slots expert cache 8312 slots 
+minp06 DECODE median 109.2 mean 114.2
+minp06 GTT MiB: 332 vram 23875 | 414 vram 22000 |  expert cache 11046 slots expert cache 8312 slots 
+    response = self.parent.error(
+  File "/usr/lib/python3.11/urllib/request.py", line 563, in error
+  File "/usr/lib/python3.11/urllib/request.py", line 643, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 503: Service Unavailable
+## q7.txt
+trace PREFILL 4000 prompt_n 4528 1298 tok/s
+trace PREFILL 4000 prompt_n 4528 1330 tok/s
+trace PREFILL 16000 prompt_n 17942 2283 tok/s
+trace PREFILL 32000 prompt_n 35818 2653 tok/s
+trace GTT MiB: 332 vram 23876 | 412 vram 22000 |  expert cache 11046 slots expert cache 8312 slots 
+res2048 DECODE median 112.0 mean 113.5
+res2048 PREFILL 4000 prompt_n 4528 1382 tok/s
+res2048 PREFILL 4000 prompt_n 4528 1382 tok/s
+res2048 PREFILL 16000 prompt_n 17941 2406 tok/s
+res2048 PREFILL 32000 prompt_n 35821 2876 tok/s
+res2048 GTT MiB: 332 vram 23876 | 412 vram 23025 |  expert cache 11046 slots expert cache 8803 slots 
+res1536 DECODE median 112.2 mean 113.5
+res1536 PREFILL 4000 prompt_n 4528 1404 tok/s
+res1536 PREFILL 4000 prompt_n 4528 1395 tok/s
+res1536 PREFILL 16000 prompt_n 17942 2364 tok/s
+res1536 PREFILL 32000 prompt_n 35821 2746 tok/s
+res1536 GTT MiB: 332 vram 23874 | 412 vram 23533 |  expert cache 11180 slots expert cache 8984 slots 
+Q7 DONE

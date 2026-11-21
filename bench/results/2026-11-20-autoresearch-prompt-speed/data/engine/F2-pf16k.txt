@@ -1,0 +1,94 @@
+strata generate: layer split auto: K=26 - predicted 29.8 ms per decode window; the caches hold 20162 of 24576 profiled pairs (~99.5% of the routed mass), best of 46 placements
+strata generate: expert cache 11046 slots, 20.08 GiB of VRAM; policy is
+strata generate: layer split: CUDA1 runs layers 26-47, expert cache 8803 slots (17.68 GiB), 8803 of its 11264 profiled pairs; slot 0 verified
+strata trace: read 50 tokens (windows) in 434.3 ms
+strata trace: checkpoint at 50: sync 0.2 ms, save 81.6 ms (2 stage(s))
+strata trace: read 4 tokens (windows) in 34.9 ms
+strata trace: prompt done (slots refilled) -1 -1 557.4 ms
+strata serve: prompt 55 tokens = 0 reused + 55 read in 557 ms (98.7 tok/s), 16 generated in 210 ms (76.1 tok/s), drafts accepted 5 of 10, 1 checkpoints
+strata trace: lent 2219 slots for 4608 tokens in 0.3 ms
+strata trace: prompt chunk 0 of 4522 stage [0,26) 0.0 ms
+strata trace: prompt chunk 0 of 4522 stage [26,48) 1211.2 ms
+strata serve: draft layer prompt K/V batched on CUDA1 (E-9 on the layer split, K/V mode 2)
+strata trace: read 4522 tokens (batched) in 2436.7 ms
+strata trace: checkpoint at 4522: sync 0.0 ms, save 77.3 ms (2 stage(s))
+strata trace: refill start 1177 -1 3417.8 ms
+strata trace: refill start 1042 -1 3419.1 ms
+strata trace: refilled 2219 slots on 2 stage(s) in 334.6 ms
+strata trace: read 4 tokens (windows) in 32.6 ms
+strata trace: prompt done (slots refilled) -1 -1 3785.1 ms
+strata serve: prompt 4527 tokens = 0 reused + 4527 read in 3012 ms (1503.0 tok/s), 8 generated in 86 ms (92.7 tok/s), drafts accepted 4 of 5, 1 checkpoints
+strata trace: lent 2219 slots for 4608 tokens in 0.6 ms
+strata trace: prompt chunk 0 of 4523 stage [0,26) 3120.8 ms
+strata trace: prompt chunk 0 of 4523 stage [26,48) 4278.4 ms
+strata trace: read 4523 tokens (batched) in 2643.4 ms
+strata trace: checkpoint at 4523: sync 0.0 ms, save 74.6 ms (2 stage(s))
+strata trace: refill start 1177 -1 6744.6 ms
+strata trace: refill start 1042 -1 6745.9 ms
+strata trace: refilled 2219 slots on 2 stage(s) in 334.6 ms
+strata trace: read 4 tokens (windows) in 32.4 ms
+strata trace: prompt done (slots refilled) -1 -1 7111.6 ms
+strata serve: prompt 4528 tokens = 0 reused + 4528 read in 3234 ms (1400.0 tok/s), 8 generated in 91 ms (88.0 tok/s), drafts accepted 4 of 5, 1 checkpoints
+strata trace: lent 2219 slots for 4608 tokens in 0.3 ms
+strata trace: prompt chunk 0 of 4522 stage [0,26) 6459.6 ms
+strata trace: prompt chunk 0 of 4522 stage [26,48) 7614.4 ms
+strata trace: read 4522 tokens (batched) in 2643.3 ms
+strata trace: checkpoint at 4522: sync 0.0 ms, save 72.8 ms (2 stage(s))
+strata trace: refill start 1177 -1 10080.9 ms
+strata trace: refill start 1042 -1 10082.3 ms
+strata trace: refilled 2219 slots on 2 stage(s) in 334.5 ms
+strata trace: read 4 tokens (windows) in 32.2 ms
+strata trace: prompt done (slots refilled) -1 -1 10447.6 ms
+strata serve: prompt 4527 tokens = 0 reused + 4527 read in 3240 ms (1397.3 tok/s), 8 generated in 100 ms (80.1 tok/s), drafts accepted 4 of 5, 1 checkpoints
+strata trace: lent 5487 slots for 16384 tokens in 0.3 ms
+strata trace: prompt chunk 0 of 17937 stage [0,26) 9818.3 ms
+strata trace: prompt chunk 9216 of 17937 stage [0,26) 12041.2 ms
+strata trace: prompt chunk 0 of 9216 stage [26,48) 12042.2 ms
+strata trace: prompt chunk 0 of 8721 stage [26,48) 14455.6 ms
+strata trace: read 17937 tokens (batched) in 7054.9 ms
+strata trace: refill start 2879 -1 17778.4 ms
+strata trace: refill start 2608 -1 17782.1 ms
+strata trace: refilled 5487 slots on 2 stage(s) in 821.9 ms
+strata trace: read 4 tokens (windows) in 37.3 ms
+strata trace: prompt done (slots refilled) -1 -1 18637.6 ms
+strata serve: prompt 17942 tokens = 0 reused + 17942 read in 8076 ms (2221.8 tok/s), 8 generated in 89 ms (89.5 tok/s), drafts accepted 4 of 5, 1 checkpoints
+strata trace: lent 5487 slots for 16384 tokens in 0.3 ms
+strata trace: prompt chunk 0 of 17937 stage [0,26) 18063.1 ms
+strata trace: prompt chunk 9216 of 17937 stage [0,26) 20289.3 ms
+strata trace: prompt chunk 0 of 9216 stage [26,48) 20291.6 ms
+strata trace: prompt chunk 0 of 8721 stage [26,48) 22680.9 ms
+strata trace: read 17937 tokens (batched) in 7029.9 ms
+strata trace: refill start 2879 -1 25998.1 ms
+strata trace: refill start 2608 -1 26001.5 ms
+strata trace: refilled 5487 slots on 2 stage(s) in 832.9 ms
+strata trace: read 4 tokens (windows) in 36.8 ms
+strata trace: prompt done (slots refilled) -1 -1 26867.9 ms
+strata serve: prompt 17942 tokens = 0 reused + 17942 read in 8130 ms (2206.8 tok/s), 8 generated in 83 ms (96.4 tok/s), drafts accepted 4 of 4, 1 checkpoints
+strata trace: lent 5487 slots for 16384 tokens in 0.3 ms
+strata trace: prompt chunk 0 of 35816 stage [0,26) 26307.7 ms
+strata trace: prompt chunk 12032 of 35816 stage [0,26) 28979.5 ms
+strata trace: prompt chunk 0 of 12032 stage [26,48) 28980.8 ms
+strata trace: prompt chunk 24064 of 35816 stage [0,26) 31728.6 ms
+strata trace: prompt chunk 0 of 12032 stage [26,48) 31729.2 ms
+strata trace: prompt chunk 0 of 11752 stage [26,48) 34634.0 ms
+strata trace: read 35816 tokens (batched) in 11232.1 ms
+strata trace: refill start 2879 -1 38444.8 ms
+strata trace: refill start 2608 -1 38478.9 ms
+strata trace: refilled 5487 slots on 2 stage(s) in 847.6 ms
+strata trace: read 4 tokens (windows) in 44.1 ms
+strata trace: prompt done (slots refilled) -1 -1 39336.6 ms
+strata serve: prompt 35821 tokens = 0 reused + 35821 read in 12357 ms (2898.9 tok/s), 8 generated in 90 ms (88.6 tok/s), drafts accepted 4 of 5, 2 checkpoints
+strata trace: lent 5487 slots for 16384 tokens in 0.3 ms
+strata trace: prompt chunk 0 of 35816 stage [0,26) 38872.2 ms
+strata trace: prompt chunk 12032 of 35816 stage [0,26) 41544.2 ms
+strata trace: prompt chunk 0 of 12032 stage [26,48) 41546.3 ms
+strata trace: prompt chunk 24064 of 35816 stage [0,26) 44297.4 ms
+strata trace: prompt chunk 0 of 12032 stage [26,48) 44298.0 ms
+strata trace: prompt chunk 0 of 11752 stage [26,48) 47207.1 ms
+strata trace: read 35816 tokens (batched) in 11237.2 ms
+strata trace: refill start 2879 -1 51014.5 ms
+strata trace: refill start 2608 -1 51018.0 ms
+strata trace: refilled 5487 slots on 2 stage(s) in 821.9 ms
+strata trace: read 4 tokens (windows) in 39.9 ms
+strata trace: prompt done (slots refilled) -1 -1 51876.3 ms
+strata serve: prompt 35821 tokens = 0 reused + 35821 read in 12431 ms (2881.5 tok/s), 8 generated in 136 ms (59.0 tok/s), drafts accepted 4 of 5, 2 checkpoints
