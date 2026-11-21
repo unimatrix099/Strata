@@ -1,0 +1,37 @@
+B0 CTXRUN 8000 tail 0 prompt_n 9016 2092 tok/s decode 98.5 n 300 wall 7.4
+B0 CTXRUN 8000 tail 1 prompt_n 9017 1940 tok/s decode 114.1 n 300 wall 7.3
+B0 CTXRUN 8000 tail 2 prompt_n 9012 1936 tok/s decode 104.6 n 300 wall 7.5
+B0 CTX 8000 prompt_n 9016 prompt 2092 tok/s decode median 104.6 all [98.5, 114.1, 104.6]
+B0 CTXRUN 64000 tail 0 prompt_n 71602 3752 tok/s decode 95.0 n 300 wall 22.3
+B0 CTXRUN 64000 tail 1 prompt_n 11443 1705 tok/s decode 111.9 n 300 wall 9.4
+B0 CTXRUN 64000 tail 2 prompt_n 11438 1671 tok/s decode 98.2 n 300 wall 9.9
+B0 CTX 64000 prompt_n 71602 prompt 3752 tok/s decode median 98.2 all [95.0, 111.9, 98.2]
+B0 CTXRUN 127000 tail 0 prompt_n 142016 3689 tok/s decode 89.4 n 300 wall 41.9
+B0 CTXRUN 127000 tail 1 prompt_n 9665 1227 tok/s decode 109.0 n 300 wall 10.7
+B0 CTXRUN 127000 tail 2 prompt_n 9660 1286 tok/s decode 99.3 n 300 wall 10.6
+B0 CTX 127000 prompt_n 142016 prompt 3689 tok/s decode median 99.3 all [89.4, 109.0, 99.3]
+    response = self.parent.error(
+  File "/usr/lib/python3.11/urllib/request.py", line 563, in error
+  File "/usr/lib/python3.11/urllib/request.py", line 643, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 400: Bad Request
+B0 GTT MiB: 17 vram 23881 | 27 vram 22611 |  expert cache 11046 slots expert cache 8803 slots 
+B0-timing CTXRUN 8000 tail 0 prompt_n 9015 2085 tok/s decode 94.2 n 300 wall 7.5
+B0-timing CTXRUN 8000 tail 1 prompt_n 9016 1923 tok/s decode 113.0 n 300 wall 7.4
+B0-timing CTXRUN 8000 tail 2 prompt_n 9011 1916 tok/s decode 99.8 n 300 wall 7.7
+B0-timing CTX 8000 prompt_n 9015 prompt 2085 tok/s decode median 99.8 all [94.2, 113.0, 99.8]
+B0-timing CTXRUN 64000 tail 0 prompt_n 71600 3718 tok/s decode 89.0 n 300 wall 22.7
+B0-timing CTXRUN 64000 tail 1 prompt_n 11441 1693 tok/s decode 107.6 n 300 wall 9.6
+B0-timing CTXRUN 64000 tail 2 prompt_n 11436 1662 tok/s decode 97.7 n 300 wall 10.0
+B0-timing CTX 64000 prompt_n 71600 prompt 3718 tok/s decode median 97.7 all [89.0, 107.6, 97.7]
+B0-timing CTXRUN 127000 tail 0 prompt_n 142016 3658 tok/s decode 90.6 n 300 wall 42.2
+B0-timing CTXRUN 127000 tail 1 prompt_n 9665 1224 tok/s decode 118.9 n 300 wall 10.5
+B0-timing CTXRUN 127000 tail 2 prompt_n 9660 1279 tok/s decode 98.7 n 300 wall 10.7
+B0-timing CTX 127000 prompt_n 142016 prompt 3658 tok/s decode median 98.7 all [90.6, 118.9, 98.7]
+    response = self.parent.error(
+  File "/usr/lib/python3.11/urllib/request.py", line 563, in error
+  File "/usr/lib/python3.11/urllib/request.py", line 643, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 400: Bad Request
+B0-timing GTT MiB: 17 vram 23881 | 27 vram 22611 |  expert cache 11046 slots expert cache 8803 slots 
+Q1 DONE

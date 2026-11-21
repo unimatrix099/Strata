@@ -1,0 +1,21 @@
+S2-thread+prefetch CTX 8000 prompt_n 7995 prompt 2014 tok/s decode median 100.6 ms/window mean 17.04 [17.24, 16.01, 17.86]
+S2-thread+prefetch CTX 240000 prompt_n 238068 prompt 4188 tok/s decode median 98.6 ms/window mean 18.79 [18.3, 18.67, 19.41]
+S2-thread+prefetch GTT MiB: 17 vram 23882 | 27 vram 22611 |  expert cache 11046 slots expert cache 8803 slots 
+S2-thread+prefetch TOTAL 238063 gpu 52774 qsa select=4845 qsa attn=3377 kv stage=3 wait copy=2087 gemm gate/up=13217
+S2-thread+prefetch DEEPEST 12K chunk gpu 2786 qsa select=379 qsa attn=170 kv stage=1 wait copy=130 gemm gate/up=849
+M1-simt1 CTX 8000 prompt_n 7995 prompt 2024 tok/s decode median 101.7 ms/window mean 17.23 [17.05, 17.18, 17.46]
+M1-simt1 CTX 240000 prompt_n 238068 prompt 4090 tok/s decode median 92.3 ms/window mean 19.57 [19.53, 19.1, 20.07]
+M1-simt1 GTT MiB: 17 vram 23881 | 27 vram 22610 |  expert cache 11046 slots expert cache 8803 slots 
+M1-simt1 TOTAL 238063 gpu 53814 qsa select=3971 qsa attn=3407 kv stage=2312 wait copy=994 gemm gate/up=13119
+M1-simt1 DEEPEST 12K chunk gpu 3001 qsa select=383 qsa attn=178 kv stage=289 wait copy=63 gemm gate/up=820
+M2-simt2 CTX 8000 prompt_n 7995 prompt 2018 tok/s decode median 101.3 ms/window mean 16.42 [16.52, 15.91, 16.83]
+M2-simt2 CTX 240000 prompt_n 238068 prompt 4135 tok/s decode median 104.4 ms/window mean 18.54 [18.41, 17.56, 19.64]
+M2-simt2 GTT MiB: 17 vram 23882 | 27 vram 22611 |  expert cache 11046 slots expert cache 8803 slots 
+M2-simt2 TOTAL 238063 gpu 53230 qsa select=3427 qsa attn=3439 kv stage=2194 wait copy=989 gemm gate/up=13132
+M2-simt2 DEEPEST 12K chunk gpu 2948 qsa select=332 qsa attn=180 kv stage=288 wait copy=58 gemm gate/up=821
+S3-thread+topk-reg CTX 8000 prompt_n 7995 prompt 2014 tok/s decode median 98.5 ms/window mean 17.52 [18.19, 16.66, 17.71]
+S3-thread+topk-reg CTX 240000 prompt_n 238068 prompt 3945 tok/s decode median 103.5 ms/window mean 19.02 [18.01, 18.63, 20.41]
+S3-thread+topk-reg GTT MiB: 17 vram 23917 | 21 vram 22646 |  expert cache 11046 slots expert cache 8803 slots 
+S3-thread+topk-reg TOTAL 238063 gpu 55766 qsa select=6171 qsa attn=3412 kv stage=2297 wait copy=979 gemm gate/up=13121
+S3-thread+topk-reg DEEPEST 12K chunk gpu 3184 qsa select=572 qsa attn=175 kv stage=289 wait copy=74 gemm gate/up=804
+Q3 DONE

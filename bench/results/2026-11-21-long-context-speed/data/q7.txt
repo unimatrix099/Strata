@@ -1,0 +1,43 @@
+E0-newbin-base CTX 8000 prompt_n 7995 prompt 2001 tok/s decode median 79.3 ms/window mean 21.14 [21.39, 20.64, 21.38]
+E0-newbin-base CTX 128000 prompt_n 126994 prompt 3734 tok/s decode median 75.6 ms/window mean 22.33 [22.3, 22.42, 22.28]
+E0-newbin-base CTX 240000 prompt_n 238068 prompt 3436 tok/s decode median 81.8 ms/window mean 22.80 [23.34, 22.12, 22.93]
+E0-newbin-base PROF stage0 scores+topk 0.20 kv-resolve 0.12 attention 0.36 total 12.03
+E0-newbin-base PROF stage1 scores+topk 0.22 kv-resolve 0.14 attention 0.41 total 11.86
+E0-newbin-base PROF stage0 scores+topk 0.20 kv-resolve 0.14 attention 0.38 total 12.69
+E0-newbin-base PROF stage1 scores+topk 0.23 kv-resolve 0.15 attention 0.43 total 12.47
+E0-newbin-base PROF stage0 scores+topk 0.20 kv-resolve 0.12 attention 0.36 total 11.37
+E0-newbin-base PROF stage1 scores+topk 0.22 kv-resolve 0.15 attention 0.42 total 11.47
+E0-newbin-base PROF stage0 scores+topk 0.60 kv-resolve 0.24 attention 0.36 total 12.08
+E0-newbin-base PROF stage1 scores+topk 0.69 kv-resolve 0.22 attention 0.42 total 11.89
+E0-newbin-base PROF stage0 scores+topk 0.60 kv-resolve 0.18 attention 0.37 total 12.19
+E0-newbin-base PROF stage1 scores+topk 0.70 kv-resolve 0.16 attention 0.42 total 12.34
+E0-newbin-base PROF stage0 scores+topk 0.60 kv-resolve 0.19 attention 0.37 total 11.87
+E0-newbin-base PROF stage1 scores+topk 0.69 kv-resolve 0.17 attention 0.42 total 11.85
+E0-newbin-base PROF stage0 scores+topk 0.99 kv-resolve 0.26 attention 0.37 total 12.12
+E0-newbin-base PROF stage1 scores+topk 1.14 kv-resolve 0.24 attention 0.42 total 12.39
+E0-newbin-base PROF stage0 scores+topk 1.02 kv-resolve 0.22 attention 0.39 total 12.80
+E0-newbin-base PROF stage1 scores+topk 1.18 kv-resolve 0.18 attention 0.44 total 13.00
+E0-newbin-base PROF stage0 scores+topk 1.01 kv-resolve 0.23 attention 0.38 total 12.48
+E0-newbin-base PROF stage1 scores+topk 1.17 kv-resolve 0.20 attention 0.43 total 12.63
+E1-dec CTX 8000 prompt_n 7995 prompt 2015 tok/s decode median 84.8 ms/window mean 20.93 [21.66, 19.94, 21.19]
+E1-dec CTX 128000 prompt_n 126994 prompt 3740 tok/s decode median 78.5 ms/window mean 21.85 [22.08, 20.7, 22.76]
+E1-dec CTX 240000 prompt_n 238068 prompt 3429 tok/s decode median 81.0 ms/window mean 22.14 [22.67, 21.43, 22.31]
+E1-dec PROF stage0 scores+topk 0.24 kv-resolve 0.12 attention 0.36 total 11.76
+E1-dec PROF stage1 scores+topk 0.27 kv-resolve 0.14 attention 0.41 total 11.64
+E1-dec PROF stage0 scores+topk 0.25 kv-resolve 0.13 attention 0.37 total 11.90
+E1-dec PROF stage1 scores+topk 0.28 kv-resolve 0.15 attention 0.42 total 11.86
+E1-dec PROF stage0 scores+topk 0.25 kv-resolve 0.12 attention 0.36 total 11.61
+E1-dec PROF stage1 scores+topk 0.28 kv-resolve 0.15 attention 0.42 total 11.52
+E1-dec PROF stage0 scores+topk 0.54 kv-resolve 0.25 attention 0.36 total 11.58
+E1-dec PROF stage1 scores+topk 0.62 kv-resolve 0.22 attention 0.42 total 11.67
+E1-dec PROF stage0 scores+topk 0.55 kv-resolve 0.20 attention 0.38 total 12.02
+E1-dec PROF stage1 scores+topk 0.63 kv-resolve 0.16 attention 0.43 total 11.97
+E1-dec PROF stage0 scores+topk 0.55 kv-resolve 0.19 attention 0.37 total 11.72
+E1-dec PROF stage1 scores+topk 0.62 kv-resolve 0.17 attention 0.43 total 11.78
+E1-dec PROF stage0 scores+topk 0.83 kv-resolve 0.26 attention 0.36 total 11.94
+E1-dec PROF stage1 scores+topk 0.95 kv-resolve 0.23 attention 0.42 total 12.09
+E1-dec PROF stage0 scores+topk 0.83 kv-resolve 0.20 attention 0.37 total 12.10
+E1-dec PROF stage1 scores+topk 0.94 kv-resolve 0.17 attention 0.43 total 12.11
+E1-dec PROF stage0 scores+topk 0.83 kv-resolve 0.22 attention 0.37 total 12.19
+E1-dec PROF stage1 scores+topk 0.95 kv-resolve 0.19 attention 0.43 total 12.31
+Q7 DONE

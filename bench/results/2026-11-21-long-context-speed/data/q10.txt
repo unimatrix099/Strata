@@ -1,0 +1,37 @@
+H1-long-prof CTX 8000 prompt_n 7995 prompt 2023 tok/s decode median 79.8 ms/window mean 21.05 [20.58, 20.58, 21.99]
+H1-long-prof CTX 128000 prompt_n 126994 prompt 3752 tok/s decode median 77.8 ms/window mean 21.65 [21.66, 20.81, 22.49]
+H1-long-prof CTX 240000 prompt_n 238068 prompt 3437 tok/s decode median 82.7 ms/window mean 22.00 [22.5, 20.86, 22.65]
+H1-long-prof PROF stage0 scores+topk 0.19 kv-resolve 0.12 attention 0.36 total 11.76 | stage1 0.21
+H1-long-prof PROF stage0 scores+topk 0.20 kv-resolve 0.14 attention 0.37 total 12.64 | stage1 0.22
+H1-long-prof PROF stage0 scores+topk 0.19 kv-resolve 0.12 attention 0.36 total 11.67 | stage1 0.22
+H1-long-prof PROF stage0 scores+topk 0.45 kv-resolve 0.24 attention 0.36 total 11.58 | stage1 0.49
+H1-long-prof PROF stage0 scores+topk 0.46 kv-resolve 0.20 attention 0.39 total 12.01 | stage1 0.51
+H1-long-prof PROF stage0 scores+topk 0.45 kv-resolve 0.19 attention 0.37 total 11.64 | stage1 0.49
+H1-long-prof PROF stage0 scores+topk 0.57 kv-resolve 0.26 attention 0.37 total 11.80 | stage1 0.63
+H1-long-prof PROF stage0 scores+topk 0.56 kv-resolve 0.19 attention 0.37 total 11.65 | stage1 0.62
+H1-long-prof PROF stage0 scores+topk 0.57 kv-resolve 0.23 attention 0.38 total 12.00 | stage1 0.64
+F-c-base-1 CTX 8000 prompt_n 7995 prompt 2015 tok/s decode median 98.2 ms/window mean 17.22 [17.37, 16.54, 17.76]
+F-c-base-1 CTX 128000 prompt_n 126994 prompt 3729 tok/s decode median 91.2 ms/window mean 18.31 [17.97, 17.74, 19.23]
+F-c-base-1 CTX 240000 prompt_n 238068 prompt 3419 tok/s decode median 91.9 ms/window mean 18.81 [18.94, 18.07, 19.43]
+F-c-base-1 DECODE median 117.5 mean 117.3
+F-c-base-1 PREFILL median {4000: 1438, 16000: 2694, 32000: 3284}
+F-c-long-1 needles 30000: 3/3  prompt_n 29854 3276 tok/s, decode 112.6 tok/s (152 tok)
+F-c-long-1 needles 128000: 3/3  prompt_n 127040 4044 tok/s, decode 117.6 tok/s (162 tok)
+F-c-long-1 needles 236000: 3/3  prompt_n 234143 4053 tok/s, decode 146.3 tok/s (172 tok)
+F-c-long-1 VALIDATE 15/15
+F-c-long-1 CTX 8000 prompt_n 7995 prompt 1885 tok/s decode median 95.8 ms/window mean 17.13 [16.53, 16.64, 18.21]
+F-c-long-1 CTX 128000 prompt_n 126994 prompt 4054 tok/s decode median 96.0 ms/window mean 17.93 [17.62, 18.22, 17.96]
+F-c-long-1 CTX 240000 prompt_n 238068 prompt 4063 tok/s decode median 99.4 ms/window mean 18.27 [18.29, 17.77, 18.74]
+F-c-long-1 DECODE median 114.5 mean 117.8
+F-c-long-1 PREFILL median {4000: 1458, 16000: 2696, 32000: 3318}
+F-c-new-2 CTX 8000 prompt_n 7995 prompt 2011 tok/s decode median 95.2 ms/window mean 17.47 [17.69, 17.02, 17.7]
+F-c-new-2 CTX 128000 prompt_n 126994 prompt 4070 tok/s decode median 98.5 ms/window mean 17.94 [17.4, 18.33, 18.08]
+F-c-new-2 CTX 240000 prompt_n 238068 prompt 4092 tok/s decode median 93.8 ms/window mean 18.77 [19.47, 17.1, 19.73]
+F-c-new-2 DECODE median 117.3 mean 119.3
+F-c-new-2 PREFILL median {4000: 1445, 16000: 2694, 32000: 3319}
+F-c-long-2 CTX 8000 prompt_n 7995 prompt 1828 tok/s decode median 96.6 ms/window mean 17.61 [17.89, 16.99, 17.95]
+F-c-long-2 CTX 128000 prompt_n 126994 prompt 4074 tok/s decode median 98.9 ms/window mean 17.67 [18.25, 16.49, 18.28]
+F-c-long-2 CTX 240000 prompt_n 238068 prompt 4106 tok/s decode median 98.2 ms/window mean 18.24 [18.22, 18.11, 18.4]
+F-c-long-2 DECODE median 112.8 mean 116.6
+F-c-long-2 PREFILL median {4000: 1456, 16000: 2691, 32000: 3318}
+Q10 DONE

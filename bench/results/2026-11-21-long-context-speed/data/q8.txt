@@ -1,0 +1,51 @@
+C131-maxctx131k CTX 8000 prompt_n 7995 prompt 2034 tok/s decode median 81.0 ms/window mean 20.82 [21.02, 19.13, 22.3]
+C131-maxctx131k CTX 120000 prompt_n 119071 prompt 3815 tok/s decode median 81.9 ms/window mean 21.18 [20.92, 20.02, 22.59]
+C131-maxctx131k PROF stage0 scores+topk 0.15 kv-resolve 0.12 attention 0.36 total 11.83
+C131-maxctx131k PROF stage1 scores+topk 0.17 kv-resolve 0.14 attention 0.42 total 11.42
+C131-maxctx131k PROF stage0 scores+topk 0.15 kv-resolve 0.13 attention 0.37 total 11.59
+C131-maxctx131k PROF stage1 scores+topk 0.17 kv-resolve 0.14 attention 0.41 total 11.44
+C131-maxctx131k PROF stage0 scores+topk 0.15 kv-resolve 0.12 attention 0.37 total 12.05
+C131-maxctx131k PROF stage1 scores+topk 0.17 kv-resolve 0.15 attention 0.42 total 11.24
+C131-maxctx131k PROF stage0 scores+topk 0.55 kv-resolve 0.24 attention 0.36 total 11.61
+C131-maxctx131k PROF stage1 scores+topk 0.60 kv-resolve 0.21 attention 0.41 total 11.60
+C131-maxctx131k PROF stage0 scores+topk 0.56 kv-resolve 0.18 attention 0.37 total 11.73
+C131-maxctx131k PROF stage1 scores+topk 0.60 kv-resolve 0.14 attention 0.42 total 11.71
+C131-maxctx131k PROF stage0 scores+topk 0.56 kv-resolve 0.18 attention 0.37 total 11.77
+C131-maxctx131k PROF stage1 scores+topk 0.62 kv-resolve 0.16 attention 0.43 total 11.87
+F-base-1 CTX 8000 prompt_n 7995 prompt 2014 tok/s decode median 96.8 ms/window mean 17.03 [17.51, 16.37, 17.22]
+F-base-1 CTX 128000 prompt_n 126994 prompt 3706 tok/s decode median 93.7 ms/window mean 17.85 [17.31, 17.62, 18.61]
+F-base-1 CTX 240000 prompt_n 238068 prompt 3390 tok/s decode median 94.2 ms/window mean 19.14 [19.77, 17.56, 20.09]
+F-base-1 GTT MiB: 17 vram 23883 | 61 vram 22791 |  expert cache 11046 slots expert cache 8789 slots 
+F-base-1 DECODE median 114.3 mean 118.3
+F-base-1 PREFILL median {4000: 1456, 16000: 2682, 32000: 3269}
+F-base-1 TOTAL 126989 gpu 29642 qsa select=3992 qsa attn=1844 kv stage=680 wait copy=463 gemm gate/up=7068
+F-base-1 TOTAL 238063 gpu 63279 qsa select=13977 qsa attn=3566 kv stage=2328 wait copy=991 gemm gate/up=13201
+F-base-1 DEEPEST 12K chunk gpu 3993 qsa select=1361 qsa attn=187 kv stage=285 wait copy=59 gemm gate/up=837
+F-new-1 CTX 8000 prompt_n 7995 prompt 2010 tok/s decode median 100.9 ms/window mean 17.05 [17.39, 16.57, 17.18]
+F-new-1 CTX 128000 prompt_n 126994 prompt 4067 tok/s decode median 94.4 ms/window mean 18.05 [17.55, 17.59, 19.0]
+F-new-1 CTX 240000 prompt_n 238068 prompt 4088 tok/s decode median 92.9 ms/window mean 18.98 [19.59, 17.65, 19.69]
+F-new-1 GTT MiB: 17 vram 23882 | 61 vram 22821 |  expert cache 11046 slots expert cache 8803 slots 
+F-new-1 DECODE median 115.0 mean 119.4
+F-new-1 PREFILL median {4000: 1429, 16000: 2705, 32000: 3324}
+F-new-1 TOTAL 126989 gpu 27385 qsa select=1963 qsa attn=1795 kv stage=2 wait copy=890 gemm gate/up=7093
+F-new-1 TOTAL 238063 gpu 52843 qsa select=4856 qsa attn=3383 kv stage=3 wait copy=2243 gemm gate/up=13229
+F-new-1 DEEPEST 12K chunk gpu 2791 qsa select=379 qsa attn=170 kv stage=1 wait copy=124 gemm gate/up=854
+F-base-2 CTX 8000 prompt_n 7995 prompt 2014 tok/s decode median 100.6 ms/window mean 17.31 [17.69, 16.6, 17.65]
+F-base-2 CTX 128000 prompt_n 126994 prompt 3725 tok/s decode median 97.7 ms/window mean 17.93 [17.64, 17.27, 18.87]
+F-base-2 CTX 240000 prompt_n 238068 prompt 3420 tok/s decode median 90.8 ms/window mean 19.21 [19.61, 18.01, 20.02]
+F-base-2 GTT MiB: 17 vram 23883 | 61 vram 22821 |  expert cache 11046 slots expert cache 8803 slots 
+F-base-2 DECODE median 116.9 mean 118.9
+F-base-2 PREFILL median {4000: 1431, 16000: 2691, 32000: 3278}
+F-base-2 TOTAL 126989 gpu 29541 qsa select=3974 qsa attn=1839 kv stage=762 wait copy=480 gemm gate/up=7056
+F-base-2 TOTAL 238063 gpu 62932 qsa select=13987 qsa attn=3569 kv stage=2202 wait copy=968 gemm gate/up=13182
+F-base-2 DEEPEST 12K chunk gpu 3983 qsa select=1358 qsa attn=187 kv stage=292 wait copy=69 gemm gate/up=814
+F-new-2 CTX 8000 prompt_n 7995 prompt 2008 tok/s decode median 95.5 ms/window mean 17.61 [18.77, 16.51, 17.54]
+F-new-2 CTX 128000 prompt_n 126994 prompt 4076 tok/s decode median 99.2 ms/window mean 18.06 [18.44, 18.03, 17.7]
+F-new-2 CTX 240000 prompt_n 238068 prompt 4097 tok/s decode median 94.2 ms/window mean 18.51 [18.67, 17.44, 19.42]
+F-new-2 GTT MiB: 17 vram 23883 | 59 vram 22821 |  expert cache 11046 slots expert cache 8803 slots 
+F-new-2 DECODE median 115.1 mean 118.9
+F-new-2 PREFILL median {4000: 1456, 16000: 2696, 32000: 3323}
+F-new-2 TOTAL 126989 gpu 27300 qsa select=1963 qsa attn=1795 kv stage=2 wait copy=877 gemm gate/up=7050
+F-new-2 TOTAL 238063 gpu 52709 qsa select=4855 qsa attn=3377 kv stage=3 wait copy=2039 gemm gate/up=13277
+F-new-2 DEEPEST 12K chunk gpu 2809 qsa select=398 qsa attn=171 kv stage=1 wait copy=144 gemm gate/up=835
+Q8 DONE

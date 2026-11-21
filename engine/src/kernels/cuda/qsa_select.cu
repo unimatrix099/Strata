@@ -1238,6 +1238,77 @@ int scores_thread_arch() {
     }
     return arch;
 }
+
+// ---- gfx11 long-context decode scorer (qsa_block_scores_long, STRATA_SELECT_LONG=1): block_scores_multi_kernel's scores, BITWISE, with a thread per
+// key block instead of a wave per block.  The multi kernel reduces each head's 32 lane products with five xor shuffles;
+// on RDNA3 a shuffle is an LDS permute, so a decode window at a 240K context spent ~1 ms of its ~19 ms in the scorer
+// and the pick that follows it (2x RX 7900 XTX, bench/results/2026-11-21-long-context-speed).  Here a thread holds a block's 32 float4
+// of key in registers and adds the 32 partials of a head in the shuffle tree's pairing (l with l+16, then +8, +4, +2, +1):
+// the same operands at every addition, so the same bits (float addition commutes).  The grid is fixed (a captured decode
+// graph): a CTA whose first block is past the batch's largest n_bid returns before staging the queries.
+constexpr int DS_T = 256;
+__device__ __forceinline__ float ds_score(const float4* __restrict__ kk, const float4* __restrict__ qh) {
+    float score = 0.0f;
+#pragma unroll
+    for (int h = 0; h < IDX_HEADS; ++h) {
+        float p[32];
+#pragma unroll
+        for (int m = 0; m < 32; ++m) {
+            const float4 k4 = kk[m], q4 = qh[h * (IDX_DIM / 4) + m];
+            p[m] = k4.x * q4.x + k4.y * q4.y + k4.z * q4.z + k4.w * q4.w;   // block_scores_kernel's per-lane expression
+        }
+#pragma unroll
+        for (int o = 16; o > 0; o >>= 1)
+#pragma unroll
+            for (int m = 0; m < o; ++m) p[m] = p[m] + p[m + o];
+        score += p[0] > 0.0f ? p[0] : 0.0f;
+    }
+    return score;
+}
+__global__ void __launch_bounds__(DS_T) block_scores_dec_kernel(const float* __restrict__ pooled,
+                                                                const float* __restrict__ dead,
+                                                                const float* __restrict__ q_idx,
+                                                                const int32_t* __restrict__ steps, int nq,
+                                                                int64_t max_blocks, float* __restrict__ out) {
+    __shared__ __align__(16) float4 qs[MQ * IDX_HEADS * (IDX_DIM / 4)];
+    __shared__ int64_t s_nkv[MQ], s_nbid[MQ];
+    if (threadIdx.x < nq) {
+        s_nkv[threadIdx.x] = steps[threadIdx.x * kStepCount + kStepNKv];
+        s_nbid[threadIdx.x] = steps[threadIdx.x * kStepCount + kStepNBid];
+    }
+    __syncthreads();
+    int64_t top = 0;
+    for (int q = 0; q < nq; ++q) top = s_nbid[q] > top ? s_nbid[q] : top;
+    if ((int64_t) blockIdx.x * DS_T > top) return;   // CTA-uniform: the barrier below is safe
+    for (int i = threadIdx.x; i < nq * IDX_HEADS * (IDX_DIM / 4); i += blockDim.x)
+        qs[i] = reinterpret_cast<const float4*>(q_idx)[i];
+    __syncthreads();
+    const int64_t stride = (int64_t) gridDim.x * DS_T;
+    for (int64_t b = (int64_t) blockIdx.x * DS_T + threadIdx.x; b <= top && b < max_blocks; b += stride) {
+        float4 kk[32];
+        const float4* kp = reinterpret_cast<const float4*>(pooled + b * IDX_DIM);
+#pragma unroll
+        for (int m = 0; m < 32; ++m) kk[m] = kp[m];
+        for (int qi = 0; qi < nq; ++qi) {
+            const int64_t n_bid = s_nbid[qi];
+            if (b > n_bid) continue;
+            float score;
+            if (b == n_bid) {   // the query's own tail block: the raw keys of the block being filled
+                float4 kd[32];
+#pragma unroll
+                for (int m = 0; m < 32; ++m) kd[m] = reinterpret_cast<const float4*>(dead)[m];
+                score = ds_score(kd, qs + qi * IDX_HEADS * (IDX_DIM / 4));
+                if (s_nkv[qi] % R != 0) score += 1e9f;
+            } else score = ds_score(kk, qs + qi * IDX_HEADS * (IDX_DIM / 4));
+            out[qi * max_blocks + b] = score;
+        }
+    }
+}
+// STRATA_SCORES_DEC=0: the long-context decode select keeps qsa_block_scores's kernels
+bool scores_dec_on() {
+    static const bool on = [] { const char* v = std::getenv("STRATA_SCORES_DEC"); return v == nullptr || v[0] != '0'; }();
+    return on;
+}
 #endif
 
 #if !defined(__HIPCC__)
@@ -2439,7 +2510,7 @@ bool qsa_block_topk_cluster(const float* scores, const int32_t* steps, int64_t n
 #endif
 }
 
-#if !defined(__HIPCC__)
+// (HIP: the long-context decode select, qsa_block_topk_long, runs these with the caller's scratch instead of device globals)
 // ---- the decode top-k split over many CTAs, for cards without thread-block clusters (Turing: a decode window's 1-6
 // queries ran block_topk_wide_kernel on 1-6 SMs, ~230 us a call at 420K cells, RTX 2080 Ti).  A query's blocks are
 // cut into chunks of SP_CH; six launches: four radix passes (each chunk adds its 8-bit histogram to the query's global
@@ -2448,9 +2519,24 @@ bool qsa_block_topk_cluster(const float* scores, const int32_t* steps, int64_t n
 // the width; 0 when none) - pure functions of integer counts, so every CTA finds the same digit, and the threshold,
 // `above` and the emitted cells are block_topk_kernel's: identical ids.  STRATA_TOPK_SPLIT=0 keeps the wide kernel.
 constexpr int SP_T = 256, SP_W = SP_T / 32, SP_CH = 2048, SP_MAXQ = 16, SP_MAXCH = 512;
+#if defined(__HIPCC__)
+struct SpScratch {
+    int hist[SP_MAXQ][4][256];
+    int state[5][SP_MAXQ][2];          // after p digits: prefix, above
+    int cnt[SP_MAXQ][SP_MAXCH][2];     // per chunk: cells above the threshold, cells at it
+};
+#define STRATA_SP_PARAM , SpScratch* __restrict__ sp_
+#define STRATA_SP_BIND auto& g_sp_hist = sp_->hist; auto& g_sp_state = sp_->state; auto& g_sp_cnt = sp_->cnt; (void) g_sp_hist; (void) g_sp_state; (void) g_sp_cnt;
+__global__ void __launch_bounds__(256) topk_split_zero_kernel(SpScratch* __restrict__ sp_) {
+    for (int p = 0; p < 4; ++p) sp_->hist[blockIdx.x][p][threadIdx.x] = 0;
+}
+#else
 __device__ int g_sp_hist[SP_MAXQ][4][256];
 __device__ int g_sp_state[5][SP_MAXQ][2];          // after p digits: prefix, above
 __device__ int g_sp_cnt[SP_MAXQ][SP_MAXCH][2];     // per chunk: cells above the threshold, cells at it
+#define STRATA_SP_PARAM
+#define STRATA_SP_BIND
+#endif
 
 // the digit of pass `p` from its complete histogram: block_topk_kernel's scan as a parallel suffix sum
 __device__ void sp_digit(const int* __restrict__ h, int width, int above, int& digit, int& above_out, int* s_buf) {
@@ -2486,7 +2572,8 @@ __device__ void sp_digit(const int* __restrict__ h, int width, int above, int& d
 
 template <int P>
 __global__ void __launch_bounds__(SP_T) topk_split_hist_kernel(const float* __restrict__ scores,
-                                                               const int32_t* __restrict__ steps, int64_t max_blocks) {
+                                                               const int32_t* __restrict__ steps, int64_t max_blocks STRATA_SP_PARAM) {
+    STRATA_SP_BIND
     __shared__ int hist[SP_W][256];
     __shared__ int s_buf[256];
     const int q = blockIdx.y, t = threadIdx.x, lane = t & 31, warp = t >> 5;
@@ -2527,7 +2614,8 @@ __global__ void __launch_bounds__(SP_T) topk_split_hist_kernel(const float* __re
 
 // the threshold from pass 3's histogram, then each chunk's cells above / at it
 __global__ void __launch_bounds__(SP_T) topk_split_count_kernel(const float* __restrict__ scores,
-                                                                const int32_t* __restrict__ steps, int64_t max_blocks) {
+                                                                const int32_t* __restrict__ steps, int64_t max_blocks STRATA_SP_PARAM) {
+    STRATA_SP_BIND
     __shared__ int s_buf[256];
     __shared__ int s_r[2][SP_W];
     const int q = blockIdx.y, t = threadIdx.x, lane = t & 31, warp = t >> 5;
@@ -2567,7 +2655,8 @@ __global__ void __launch_bounds__(SP_T) topk_split_count_kernel(const float* __r
 // the emit: block_topk_wide_kernel's within a chunk, offset by the chunks before it
 __global__ void __launch_bounds__(SP_T) topk_split_emit_kernel(const float* __restrict__ scores,
                                                                const int32_t* __restrict__ steps, int64_t max_blocks,
-                                                               int64_t cap, int32_t* __restrict__ ids) {
+                                                               int64_t cap, int32_t* __restrict__ ids STRATA_SP_PARAM) {
+    STRATA_SP_BIND
     __shared__ int s_gt[SP_W], s_eq[SP_W];
     __shared__ int s_sel0, s_eqb0;
     const int q = blockIdx.y, t = threadIdx.x, lane = t & 31, warp = t >> 5;
@@ -2655,6 +2744,25 @@ __global__ void __launch_bounds__(SP_T) topk_split_emit_kernel(const float* __re
     }
 }
 
+#if defined(__HIPCC__)
+// HIP: the split kernels through the caller's scratch (sizeof(SpScratch), one call at a time per scratch, no initial value)
+static bool qsa_block_topk_split_hip(const float* scores, const int32_t* steps, int64_t nq, int64_t max_blocks, int64_t cap,
+                                     int32_t* ids, cudaStream_t s, SpScratch* sp) {
+    const int64_t nch = (max_blocks + SP_CH - 1) / SP_CH;
+    if (nq < 1 || nq > SP_MAXQ || nch > SP_MAXCH || sp == nullptr) return false;
+    const dim3 grid((unsigned) nch, (unsigned) nq);
+    topk_split_zero_kernel<<<(unsigned) nq, 256, 0, s>>>(sp);
+    topk_split_hist_kernel<0><<<grid, SP_T, 0, s>>>(scores, steps, max_blocks, sp);
+    topk_split_hist_kernel<1><<<grid, SP_T, 0, s>>>(scores, steps, max_blocks, sp);
+    topk_split_hist_kernel<2><<<grid, SP_T, 0, s>>>(scores, steps, max_blocks, sp);
+    topk_split_hist_kernel<3><<<grid, SP_T, 0, s>>>(scores, steps, max_blocks, sp);
+    topk_split_count_kernel<<<grid, SP_T, 0, s>>>(scores, steps, max_blocks, sp);
+    topk_split_emit_kernel<<<grid, SP_T, 0, s>>>(scores, steps, max_blocks, cap, ids, sp);
+    const cudaError_t e = cudaGetLastError();
+    if (e != cudaSuccess) { std::fprintf(stderr, "qsa_block_topk (split, hip): %s\n", cudaGetErrorString(e)); std::exit(1); }
+    return true;
+}
+#else
 bool topk_split_device() {
     static int ok[64] = {};   // 0 unknown, 1 yes, 2 no
     static const int env = [] { const char* v = std::getenv("STRATA_TOPK_SPLIT"); return v ? (std::atoi(v) != 0 ? 1 : 0) : -1; }();
@@ -3116,6 +3224,9 @@ static bool qsa_block_topk_multi(const float* scores, const int32_t* steps, int6
 int64_t qsa_topk_multi_scratch_ints(int64_t nq) {
 #if !defined(__HIPCC__) && defined(STRATA_EXPERIMENTAL_SM60)
     return (nq < MT_MAXQ ? nq : MT_MAXQ) * (int64_t) MT_Q_INTS;
+#elif defined(__HIPCC__)
+    (void) nq;
+    return (int64_t) ((sizeof(SpScratch) + sizeof(int32_t) - 1) / sizeof(int32_t));   // the split kernels' histograms, states and counts
 #else
     (void) nq;
     return 0;
@@ -3134,6 +3245,15 @@ void qsa_block_topk_long(const float* scores, const int32_t* steps, int64_t nq, 
             qsa_block_topk_multi(scores, steps, nq, max_blocks, cap, ids, stream, multi_scratch))
             return;
     }
+#elif defined(__HIPCC__)
+    // gfx11 (2x RX 7900 XTX): the split kernels, many CTAs per query (0.10 -> 0.05 ms a call at 240K cells; the same ids).
+    // STRATA_TOPK_SPLIT=0 keeps the one-CTA kernels
+    static const bool split = [] { const char* v = std::getenv("STRATA_TOPK_SPLIT"); return v == nullptr || v[0] != '0'; }();
+    static const bool old = std::getenv("STRATA_TOPK_OLD") != nullptr;
+    if (split && !old && nq > 0 && multi_scratch != nullptr && active_blocks <= 0 && s.idx_block == R &&
+        cap >= qsa_selection_width(kTopkMaxCells, s) &&
+        qsa_block_topk_split_hip(scores, steps, nq, max_blocks, cap, ids, (cudaStream_t) stream, reinterpret_cast<SpScratch*>(multi_scratch)))
+        return;
 #else
     (void) multi_scratch;
 #endif
@@ -3147,6 +3267,16 @@ void qsa_block_scores_long(const float* pooled, const float* dead, const float* 
         nq <= MQ && active_blocks <= 0 &&
         qsa_block_scores_dx(pooled, dead, q_idx, steps, nq, max_blocks, scores, stream))
         return;
+#elif defined(__HIPCC__)
+    // gfx11: a thread per key block (block_scores_dec_kernel), the same bits.  STRATA_SCORES_DEC=0 keeps qsa_block_scores's kernels
+    if (scores_dec_on() && nq > 0 && s.idx_dim == IDX_DIM && s.idx_n_head == IDX_HEADS && s.idx_block == R && scores_multi_on() &&
+        nq <= MQ && active_blocks <= 0) {
+        const unsigned grid = (unsigned) ((max_blocks + DS_T - 1) / DS_T);
+        block_scores_dec_kernel<<<grid, DS_T, 0, (cudaStream_t) stream>>>(pooled, dead, q_idx, steps, (int) nq, max_blocks, scores);
+        const cudaError_t e = cudaGetLastError();
+        if (e != cudaSuccess) { std::fprintf(stderr, "qsa_block_scores_long (dec): %s\n", cudaGetErrorString(e)); std::exit(1); }
+        return;
+    }
 #endif
     qsa_block_scores(pooled, dead, q_idx, steps, nq, max_blocks, s, scores, stream, active_blocks);
 }

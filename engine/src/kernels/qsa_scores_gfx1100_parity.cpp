@@ -39,6 +39,7 @@ struct Buffer {
 };
 struct Case { int64_t context, queries, capacity; int mode; int bound; bool timing; };
 int cases_done = 0, engaged = 0;
+bool g_long = false;   // --dec: the candidate is the long-context decode select (qsa_block_scores_long / qsa_block_topk_long)
 uint64_t scores_checked = 0, ids_checked = 0;
 
 void check(Case c) {
@@ -89,10 +90,14 @@ void check(Case c) {
         k::qsa_block_scores_reference(p.as<float>(), d.as<float>(), query.as<float>(), step.as<int32_t>(),
                                      nq, nb, s, a.as<float>(), nullptr, bound);
     };
+    Buffer scratch((size_t) std::max<int64_t>(k::qsa_topk_multi_scratch_ints(nq), 1) * 4);
     auto candidate = [&] {
-        k::qsa_block_scores(p.as<float>(), d.as<float>(), query.as<float>(), step.as<int32_t>(),
+        if (g_long) k::qsa_block_scores_long(p.as<float>(), d.as<float>(), query.as<float>(), step.as<int32_t>(),
+                                             nq, nb, s, b.as<float>(), nullptr, bound);
+        else k::qsa_block_scores(p.as<float>(), d.as<float>(), query.as<float>(), step.as<int32_t>(),
                            nq, nb, s, b.as<float>(), nullptr, bound);
     };
+
     ck(cudaMemset(a.p, 0xa5, a.bytes)); ck(cudaMemset(b.p, 0x5a, b.bytes));
     reference(); candidate(); ck(cudaDeviceSynchronize());
     std::vector<uint32_t> av(nq*nb), bv(nq*nb);
@@ -116,8 +121,11 @@ void check(Case c) {
         }
     }
     ck(cudaMemset(ia.p, 0xff, ia.bytes)); ck(cudaMemset(ib.p, 0xff, ib.bytes));
-    k::qsa_block_topk(a.as<float>(), step.as<int32_t>(), nq, nb, cap, s, ia.as<int32_t>(), nullptr, bound);
-    k::qsa_block_topk(b.as<float>(), step.as<int32_t>(), nq, nb, cap, s, ib.as<int32_t>(), nullptr, bound);
+    // STRATA_TOPK_REF=1: the reference's ids come from the original radix kernel (checks the pick kernel as well as the scorer)
+    if (std::getenv("STRATA_TOPK_REF")) k::qsa_block_topk_ref(a.as<float>(), step.as<int32_t>(), nq, nb, cap, s, ia.as<int32_t>(), nullptr);
+    else k::qsa_block_topk(a.as<float>(), step.as<int32_t>(), nq, nb, cap, s, ia.as<int32_t>(), nullptr, bound);
+    if (g_long) k::qsa_block_topk_long(b.as<float>(), step.as<int32_t>(), nq, nb, cap, s, ib.as<int32_t>(), nullptr, bound, scratch.as<int32_t>());
+    else k::qsa_block_topk(b.as<float>(), step.as<int32_t>(), nq, nb, cap, s, ib.as<int32_t>(), nullptr, bound);
     ck(cudaDeviceSynchronize());
     std::vector<int32_t> iav(nq*cap), ibv(nq*cap);
     ck(cudaMemcpy(iav.data(), ia.p, ia.bytes, cudaMemcpyDeviceToHost));
@@ -152,6 +160,21 @@ void check(Case c) {
         for (int i=0; i<4; ++i) { ta+=times[0][i]/4; tb+=times[1][i]/4; }
         std::printf("TIMING ctx=%lld nq=%lld baseline_ms=%.6f candidate_ms=%.6f speedup=%.6f trials=4 repeats_per_trial=10\n",
                     (long long)c.context, (long long)nq, ta, tb, ta/tb);
+        // the pick that follows the scorer (qsa_block_topk on the reference's scores), same bound
+        float tk[2] = {0, 0};
+        for (int v = 0; v < 2; ++v) {   // 0: qsa_block_topk, 1: the long-context pick
+            auto run = [&] {
+                if (v == 1) k::qsa_block_topk_long(a.as<float>(), step.as<int32_t>(), nq, nb, cap, s, ia.as<int32_t>(), nullptr, bound, scratch.as<int32_t>());
+                else k::qsa_block_topk(a.as<float>(), step.as<int32_t>(), nq, nb, cap, s, ia.as<int32_t>(), nullptr, bound);
+            };
+            for (int i = 0; i < 3; ++i) run();
+            ck(cudaDeviceSynchronize());
+            ck(cudaEventRecord(e0));
+            for (int rep = 0; rep < 20; ++rep) run();
+            ck(cudaEventRecord(e1)); ck(cudaEventSynchronize(e1));
+            ck(cudaEventElapsedTime(&tk[v], e0, e1));
+        }
+        std::printf("TOPK ctx=%lld nq=%lld capacity=%lld topk_ms=%.6f long_ms=%.6f\n", (long long)c.context, (long long)nq, (long long)c.capacity, tk[0]/20, tk[1]/20);
         ck(cudaEventDestroy(e0)); ck(cudaEventDestroy(e1));
     }
 }
@@ -165,6 +188,19 @@ int main(int argc, char** argv) {
     require(std::getenv("STRATA_SCORES_THREAD") && std::strcmp(std::getenv("STRATA_SCORES_THREAD"), "1") == 0,
             "run with STRATA_SCORES_THREAD=1 so the candidate branch is tested");
     const bool full = argc > 1 && std::strcmp(argv[1], "--full") == 0;
+    // --dec: the decode window's calls (no active count, 1..8 queries) through the long-context select (STRATA_SELECT_LONG's
+    // kernels) against the multi kernel's scores and, with STRATA_TOPK_REF=1, the original pick's ids, bit for bit; and their times
+    if (argc > 1 && std::strcmp(argv[1], "--dec") == 0) {
+        g_long = true;
+        for (int64_t n: {1,2,3,4,5,6,7,8})
+            for (int64_t context: {9,100,103,8000,65537,131075,240001,262140}) if (context >= n) check({context,n,262144,0,2,false});
+        for (int mode: {1,2,3,4,5}) check({131075,4,262144,mode,2,false});
+        for (int64_t n: {1,2,4}) for (int64_t context: {8000,131075,240000}) check({context,n,262144,0,2,true});
+        for (int64_t n: {2,4}) for (int64_t context: {8000,120000}) check({context,n,131072,0,2,true});
+        std::printf("DEC cases=%d scores=%llu ids=%llu bitwise_scores=true bitwise_ids=true\n", cases_done,
+                    (unsigned long long)scores_checked, (unsigned long long)ids_checked);
+        return 0;
+    }
     for (int64_t n: {1,6,8,9,63,64,65,127,128,129,256})
         check({131075,n,262144,0,0,false});
     for (int64_t context: {65535,65536,65537,65538,65539,131072,262144})

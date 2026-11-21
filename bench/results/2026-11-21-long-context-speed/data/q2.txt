@@ -1,0 +1,36 @@
+B1 CTX 8000 prompt_n 8009 prompt 2018 tok/s decode median 102.1 ms/window mean 18.14 [18.88, 17.42, 18.13]
+B1 CTX 128000 prompt_n 127006 prompt 3735 tok/s decode median 95.7 ms/window mean 18.51 [19.41, 17.9, 18.23]
+B1 CTX 240000 prompt_n 238080 prompt 3417 tok/s decode median 90.9 ms/window mean 19.04 [19.15, 18.32, 19.64]
+B1 GTT MiB: 17 vram 23882 | 27 vram 22612 |  expert cache 11046 slots expert cache 8803 slots 
+B1 TOTAL 127001 gpu 29454 qsa select=3970 qsa attn=1840 kv stage=698 wait copy=480 gemm gate/up=7044
+B1 TOTAL 238075 gpu 63013 qsa select=13957 qsa attn=3570 kv stage=2362 wait copy=1021 gemm gate/up=13155
+B1 DEEPEST 12K chunk gpu 3978 qsa select=1360 qsa attn=187 kv stage=287 wait copy=60 gemm gate/up=820
+S1-scores-thread CTX 8000 prompt_n 8009 prompt 2018 tok/s decode median 103.5 ms/window mean 16.83 [17.43, 15.91, 17.15]
+S1-scores-thread CTX 128000 prompt_n 127006 prompt 3966 tok/s decode median 97.6 ms/window mean 17.86 [17.77, 17.52, 18.29]
+S1-scores-thread CTX 240000 prompt_n 238080 prompt 3941 tok/s decode median 90.0 ms/window mean 19.05 [19.82, 17.84, 19.49]
+S1-scores-thread GTT MiB: 17 vram 23882 | 27 vram 22612 |  expert cache 11046 slots expert cache 8803 slots 
+S1-scores-thread TOTAL 127001 gpu 27907 qsa select=2024 qsa attn=1810 kv stage=682 wait copy=464 gemm gate/up=7023
+S1-scores-thread TOTAL 238075 gpu 54677 qsa select=5066 qsa attn=3447 kv stage=2310 wait copy=968 gemm gate/up=13117
+S1-scores-thread DEEPEST 12K chunk gpu 3025 qsa select=410 qsa attn=179 kv stage=292 wait copy=77 gemm gate/up=792
+K1-kv-prefetch CTX 8000 prompt_n 8009 prompt 2013 tok/s decode median 100.7 ms/window mean 17.39 [17.47, 17.16, 17.53]
+K1-kv-prefetch CTX 128000 prompt_n 127006 prompt 3794 tok/s decode median 94.9 ms/window mean 18.08 [18.21, 17.12, 18.92]
+K1-kv-prefetch CTX 240000 prompt_n 238080 prompt 3481 tok/s decode median 98.9 ms/window mean 19.05 [18.73, 18.28, 20.14]
+K1-kv-prefetch GTT MiB: 17 vram 23882 | 27 vram 22612 |  expert cache 11046 slots expert cache 8803 slots 
+K1-kv-prefetch TOTAL 127001 gpu 29130 qsa select=4042 qsa attn=1869 kv stage=2 wait copy=870 gemm gate/up=7065
+K1-kv-prefetch TOTAL 238075 gpu 62068 qsa select=14366 qsa attn=3571 kv stage=3 wait copy=2524 gemm gate/up=13186
+K1-kv-prefetch DEEPEST 12K chunk gpu 3806 qsa select=1406 qsa attn=185 kv stage=1 wait copy=66 gemm gate/up=880
+R1-qsa-rows CTX 8000 prompt_n 8009 prompt 2016 tok/s decode median 97.2 ms/window mean 16.99 [17.87, 16.67, 16.42]
+R1-qsa-rows CTX 128000 prompt_n 127006 prompt 3732 tok/s decode median 95.8 ms/window mean 17.53 [17.78, 17.32, 17.49]
+R1-qsa-rows CTX 240000 prompt_n 238080 prompt 3421 tok/s decode median 90.5 ms/window mean 18.80 [19.29, 17.73, 19.38]
+R1-qsa-rows GTT MiB: 17 vram 23882 | 27 vram 22612 |  expert cache 11046 slots expert cache 8803 slots 
+R1-qsa-rows TOTAL 127001 gpu 29506 qsa select=3982 qsa attn=1843 kv stage=702 wait copy=474 gemm gate/up=7072
+R1-qsa-rows TOTAL 238075 gpu 62901 qsa select=13972 qsa attn=3563 kv stage=2246 wait copy=975 gemm gate/up=13184
+R1-qsa-rows DEEPEST 12K chunk gpu 3970 qsa select=1359 qsa attn=187 kv stage=291 wait copy=84 gemm gate/up=785
+KR0-kv-all-vram CTX 8000 prompt_n 8009 prompt 1895 tok/s decode median 107.0 ms/window mean 17.39 [17.67, 17.3, 17.21]
+KR0-kv-all-vram CTX 128000 prompt_n 127006 prompt 3444 tok/s decode median 93.4 ms/window mean 18.28 [19.12, 17.38, 18.35]
+KR0-kv-all-vram CTX 240000 prompt_n 238080 prompt 3229 tok/s decode median 94.9 ms/window mean 18.64 [18.39, 18.02, 19.5]
+KR0-kv-all-vram GTT MiB: 17 vram 23882 | 27 vram 22615 |  expert cache 10432 slots expert cache 7947 slots 
+KR0-kv-all-vram TOTAL 127001 gpu 31735 qsa select=4086 qsa attn=1884 kv stage=0 wait copy=603 gemm gate/up=6827
+KR0-kv-all-vram TOTAL 238075 gpu 66507 qsa select=14412 qsa attn=3586 kv stage=0 wait copy=1090 gemm gate/up=12749
+KR0-kv-all-vram DEEPEST 12K chunk gpu 4075 qsa select=1406 qsa attn=187 kv stage=0 wait copy=238 gemm gate/up=936
+Q2 DONE

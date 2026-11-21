@@ -1,0 +1,114 @@
+IDLE X=1
+TIMING ctx=8000 nq=1 baseline_ms=0.013713 candidate_ms=0.009754 speedup=1.405888
+TOPK ctx=8000 nq=1 capacity=262144 topk_ms=0.048639 
+TIMING ctx=131075 nq=1 baseline_ms=0.048996 candidate_ms=0.027573 speedup=1.776923
+TOPK ctx=131075 nq=1 capacity=262144 topk_ms=0.077047 
+TIMING ctx=240000 nq=1 baseline_ms=0.075129 candidate_ms=0.039903 speedup=1.882766
+TOPK ctx=240000 nq=1 capacity=262144 topk_ms=0.111919 
+TIMING ctx=8000 nq=2 baseline_ms=0.016583 candidate_ms=0.011031 speedup=1.503320
+TOPK ctx=8000 nq=2 capacity=262144 topk_ms=0.039571 
+TIMING ctx=131075 nq=2 baseline_ms=0.078979 candidate_ms=0.042088 speedup=1.876540
+TOPK ctx=131075 nq=2 capacity=262144 topk_ms=0.087919 
+TIMING ctx=240000 nq=2 baseline_ms=0.125127 candidate_ms=0.064766 speedup=1.932000
+TOPK ctx=240000 nq=2 capacity=262144 topk_ms=0.111157 
+TIMING ctx=8000 nq=4 baseline_ms=0.022419 candidate_ms=0.013948 speedup=1.607324
+TOPK ctx=8000 nq=4 capacity=262144 topk_ms=0.042787 
+TIMING ctx=131075 nq=4 baseline_ms=0.129553 candidate_ms=0.061426 speedup=2.109092
+TOPK ctx=131075 nq=4 capacity=262144 topk_ms=0.080707 
+TIMING ctx=240000 nq=4 baseline_ms=0.192034 candidate_ms=0.095398 speedup=2.012978
+TOPK ctx=240000 nq=4 capacity=262144 topk_ms=0.092769 
+TIMING ctx=8000 nq=2 baseline_ms=0.016633 candidate_ms=0.011075 speedup=1.501860
+TOPK ctx=8000 nq=2 capacity=131072 topk_ms=0.023466 
+TIMING ctx=120000 nq=2 baseline_ms=0.082450 candidate_ms=0.043646 speedup=1.889042
+TOPK ctx=120000 nq=2 capacity=131072 topk_ms=0.064061 
+TIMING ctx=8000 nq=4 baseline_ms=0.022610 candidate_ms=0.014019 speedup=1.612806
+TOPK ctx=8000 nq=4 capacity=131072 topk_ms=0.022618 
+TIMING ctx=120000 nq=4 baseline_ms=0.136050 candidate_ms=0.065151 speedup=2.088226
+TOPK ctx=120000 nq=4 capacity=131072 topk_ms=0.050793 
+DEC cases=82 scores=7873471 ids=699391 bitwise_scores=true bitwise_ids=true
+IDLE STRATA_TOPK_SPLIT=1
+TIMING ctx=8000 nq=1 baseline_ms=0.013527 candidate_ms=0.009661 speedup=1.400163
+TOPK ctx=8000 nq=1 capacity=262144 topk_ms=0.067751 
+TIMING ctx=131075 nq=1 baseline_ms=0.051150 candidate_ms=0.028809 speedup=1.775452
+TOPK ctx=131075 nq=1 capacity=262144 topk_ms=0.059615 
+TIMING ctx=240000 nq=1 baseline_ms=0.074320 candidate_ms=0.039840 speedup=1.865438
+TOPK ctx=240000 nq=1 capacity=262144 topk_ms=0.053465 
+TIMING ctx=8000 nq=2 baseline_ms=0.016334 candidate_ms=0.010884 speedup=1.500737
+TOPK ctx=8000 nq=2 capacity=262144 topk_ms=0.066521 
+TIMING ctx=131075 nq=2 baseline_ms=0.074597 candidate_ms=0.040839 speedup=1.826587
+TOPK ctx=131075 nq=2 capacity=262144 topk_ms=0.053305 
+TIMING ctx=240000 nq=2 baseline_ms=0.115084 candidate_ms=0.059374 speedup=1.938304
+TOPK ctx=240000 nq=2 capacity=262144 topk_ms=0.048412 
+TIMING ctx=8000 nq=4 baseline_ms=0.022123 candidate_ms=0.013553 speedup=1.632331
+TOPK ctx=8000 nq=4 capacity=262144 topk_ms=0.063109 
+TIMING ctx=131075 nq=4 baseline_ms=0.129474 candidate_ms=0.062621 speedup=2.067598
+TOPK ctx=131075 nq=4 capacity=262144 topk_ms=0.047805 
+TIMING ctx=240000 nq=4 baseline_ms=0.193934 candidate_ms=0.096599 speedup=2.007620
+TOPK ctx=240000 nq=4 capacity=262144 topk_ms=0.043529 
+TIMING ctx=8000 nq=2 baseline_ms=0.016648 candidate_ms=0.011060 speedup=1.505243
+TOPK ctx=8000 nq=2 capacity=131072 topk_ms=0.073223 
+TIMING ctx=120000 nq=2 baseline_ms=0.074228 candidate_ms=0.040472 speedup=1.834033
+TOPK ctx=120000 nq=2 capacity=131072 topk_ms=0.057101 
+TIMING ctx=8000 nq=4 baseline_ms=0.022564 candidate_ms=0.013946 speedup=1.617954
+TOPK ctx=8000 nq=4 capacity=131072 topk_ms=0.073105 
+TIMING ctx=120000 nq=4 baseline_ms=0.134655 candidate_ms=0.064946 speedup=2.073354
+TOPK ctx=120000 nq=4 capacity=131072 topk_ms=0.052119 
+DEC cases=82 scores=7873471 ids=699391 bitwise_scores=true bitwise_ids=true
+IDLE STRATA_TOPK_DEC_REG=1
+TIMING ctx=8000 nq=1 baseline_ms=0.019281 candidate_ms=0.009548 speedup=2.019370
+TOPK ctx=8000 nq=1 capacity=262144 topk_ms=0.030312 
+TIMING ctx=131075 nq=1 baseline_ms=0.110103 candidate_ms=0.026431 speedup=4.165640
+TOPK ctx=131075 nq=1 capacity=262144 topk_ms=0.054799 
+TIMING ctx=240000 nq=1 baseline_ms=0.136053 candidate_ms=0.037237 speedup=3.653674
+TOPK ctx=240000 nq=1 capacity=262144 topk_ms=0.143188 
+TIMING ctx=8000 nq=2 baseline_ms=0.019464 candidate_ms=0.010696 speedup=1.819743
+TOPK ctx=8000 nq=2 capacity=262144 topk_ms=0.030402 
+TIMING ctx=131075 nq=2 baseline_ms=0.099804 candidate_ms=0.039857 speedup=2.504026
+TOPK ctx=131075 nq=2 capacity=262144 topk_ms=0.082797 
+TIMING ctx=240000 nq=2 baseline_ms=0.168104 candidate_ms=0.059787 speedup=2.811729
+TOPK ctx=240000 nq=2 capacity=262144 topk_ms=0.125185 
+TIMING ctx=8000 nq=4 baseline_ms=0.025271 candidate_ms=0.013585 speedup=1.860215
+TOPK ctx=8000 nq=4 capacity=262144 topk_ms=0.026960 
+TIMING ctx=131075 nq=4 baseline_ms=0.130850 candidate_ms=0.062592 speedup=2.090542
+TOPK ctx=131075 nq=4 capacity=262144 topk_ms=0.073473 
+TIMING ctx=240000 nq=4 baseline_ms=0.201801 candidate_ms=0.098304 speedup=2.052826
+TOPK ctx=240000 nq=4 capacity=262144 topk_ms=0.112763 
+TIMING ctx=8000 nq=2 baseline_ms=0.019609 candidate_ms=0.010743 speedup=1.825279
+TOPK ctx=8000 nq=2 capacity=131072 topk_ms=0.023308 
+TIMING ctx=120000 nq=2 baseline_ms=0.101907 candidate_ms=0.041819 speedup=2.436834
+TOPK ctx=120000 nq=2 capacity=131072 topk_ms=0.059255 
+TIMING ctx=8000 nq=4 baseline_ms=0.025404 candidate_ms=0.013669 speedup=1.858517
+TOPK ctx=8000 nq=4 capacity=131072 topk_ms=0.022522 
+TIMING ctx=120000 nq=4 baseline_ms=0.135879 candidate_ms=0.065303 speedup=2.080763
+TOPK ctx=120000 nq=4 capacity=131072 topk_ms=0.050335 
+DEC cases=82 scores=7873471 ids=699391 bitwise_scores=true bitwise_ids=true
+G1-rows CTX 8000 prompt_n 7995 prompt 2018 tok/s decode median 82.7 ms/window mean 20.00 [19.96, 18.96, 21.08]
+G1-rows CTX 128000 prompt_n 126994 prompt 3753 tok/s decode median 77.4 ms/window mean 21.80 [21.65, 21.16, 22.59]
+G1-rows CTX 240000 prompt_n 238068 prompt 3435 tok/s decode median 78.3 ms/window mean 22.77 [23.58, 21.1, 23.64]
+G1-rows PROF stage0 scores+topk 0.19 kv-resolve 0.12 attention 0.35 total 11.03 | stage1 0.21
+G1-rows PROF stage0 scores+topk 0.19 kv-resolve 0.13 attention 0.36 total 11.49 | stage1 0.21
+G1-rows PROF stage0 scores+topk 0.19 kv-resolve 0.12 attention 0.36 total 11.19 | stage1 0.21
+G1-rows PROF stage0 scores+topk 0.49 kv-resolve 0.24 attention 0.36 total 11.58 | stage1 0.57
+G1-rows PROF stage0 scores+topk 0.51 kv-resolve 0.20 attention 0.38 total 12.30 | stage1 0.59
+G1-rows PROF stage0 scores+topk 0.50 kv-resolve 0.19 attention 0.37 total 11.68 | stage1 0.58
+G1-rows PROF stage0 scores+topk 0.80 kv-resolve 0.26 attention 0.37 total 12.03 | stage1 0.93
+G1-rows PROF stage0 scores+topk 0.78 kv-resolve 0.21 attention 0.38 total 12.16 | stage1 0.91
+G1-rows PROF stage0 scores+topk 0.79 kv-resolve 0.22 attention 0.38 total 12.35 | stage1 0.93
+    response = self.parent.error(
+  File "/usr/lib/python3.11/urllib/request.py", line 563, in error
+  File "/usr/lib/python3.11/urllib/request.py", line 643, in http_error_default
+    raise HTTPError(req.full_url, code, msg, hdrs, fp)
+urllib.error.HTTPError: HTTP Error 503: Service Unavailable
+G3-rows+decreg CTX 8000 prompt_n 7995 prompt 1830 tok/s decode median 80.7 ms/window mean 20.37 [20.21, 19.89, 21.01]
+G3-rows+decreg CTX 128000 prompt_n 126994 prompt 2439 tok/s decode median 81.0 ms/window mean 21.85 [22.18, 20.79, 22.59]
+G3-rows+decreg CTX 240000 prompt_n 238068 prompt 3438 tok/s decode median 75.8 ms/window mean 22.46 [22.98, 21.79, 22.62]
+G3-rows+decreg PROF stage0 scores+topk 0.19 kv-resolve 0.12 attention 0.35 total 11.28 | stage1 0.21
+G3-rows+decreg PROF stage0 scores+topk 0.19 kv-resolve 0.13 attention 0.36 total 11.33 | stage1 0.21
+G3-rows+decreg PROF stage0 scores+topk 0.19 kv-resolve 0.12 attention 0.36 total 11.06 | stage1 0.21
+G3-rows+decreg PROF stage0 scores+topk 0.62 kv-resolve 0.25 attention 0.37 total 11.72 | stage1 0.68
+G3-rows+decreg PROF stage0 scores+topk 0.62 kv-resolve 0.20 attention 0.37 total 11.90 | stage1 0.69
+G3-rows+decreg PROF stage0 scores+topk 0.63 kv-resolve 0.19 attention 0.37 total 11.85 | stage1 0.68
+G3-rows+decreg PROF stage0 scores+topk 1.04 kv-resolve 0.25 attention 0.36 total 11.91 | stage1 1.16
+G3-rows+decreg PROF stage0 scores+topk 1.06 kv-resolve 0.21 attention 0.38 total 12.57 | stage1 1.16
+G3-rows+decreg PROF stage0 scores+topk 1.06 kv-resolve 0.22 attention 0.38 total 12.39 | stage1 1.18
+Q9 DONE

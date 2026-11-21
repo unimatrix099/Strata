@@ -1,0 +1,43 @@
+Bsha-a CTXRUN 8000 tail 0 prompt_n 7995 2001 tok/s decode 93.4 n 300 wall 7.2 ms/window 18.26 tok/window 1.70 sha a8d2890b
+Bsha-a CTXRUN 8000 tail 1 prompt_n 7996 1831 tok/s decode 127.4 n 300 wall 6.7 ms/window 16.13 tok/window 2.05 sha 1c3f2972
+Bsha-a CTXRUN 8000 tail 2 prompt_n 7991 1826 tok/s decode 99.0 n 300 wall 7.4 ms/window 17.41 tok/window 1.72 sha 6e15766d
+Bsha-a CTX 8000 prompt_n 7995 prompt 2001 tok/s decode median 99.0 ms/window mean 17.27 [18.26, 16.13, 17.41]
+Bsha-a CTXRUN 128000 tail 0 prompt_n 126994 3690 tok/s decode 97.3 n 300 wall 37.6 ms/window 17.52 tok/window 1.70 sha 7eee97b6
+Bsha-a CTXRUN 128000 tail 1 prompt_n 9235 1344 tok/s decode 119.3 n 300 wall 9.5 ms/window 18.35 tok/window 2.19 sha ad272351
+Bsha-a CTXRUN 128000 tail 2 prompt_n 9230 1231 tok/s decode 92.1 n 300 wall 10.8 ms/window 19.05 tok/window 1.75 sha 81270e61
+Bsha-a CTX 128000 prompt_n 126994 prompt 3690 tok/s decode median 97.3 ms/window mean 18.31 [17.52, 18.35, 19.05]
+Bsha-a GTT MiB: 17 vram 23881 | 19 vram 22813 |  expert cache 11046 slots expert cache 8789 slots 
+Bsha-a TOTAL 126989 gpu 29774 qsa select=3970 qsa attn=1845 kv stage=665 wait copy=498 gemm gate/up=7051
+Bsha-b CTXRUN 8000 tail 0 prompt_n 7995 2007 tok/s decode 99.0 n 300 wall 7.0 ms/window 17.02 tok/window 1.69 sha 66007771
+Bsha-b CTXRUN 8000 tail 1 prompt_n 7996 1832 tok/s decode 122.2 n 300 wall 6.8 ms/window 16.93 tok/window 2.07 sha 8c09d4fb
+Bsha-b CTXRUN 8000 tail 2 prompt_n 7991 1835 tok/s decode 98.2 n 300 wall 7.4 ms/window 17.75 tok/window 1.74 sha e882b7cd
+Bsha-b CTX 8000 prompt_n 7995 prompt 2007 tok/s decode median 99.0 ms/window mean 17.23 [17.02, 16.93, 17.75]
+Bsha-b CTXRUN 128000 tail 0 prompt_n 126994 3706 tok/s decode 98.0 n 300 wall 37.4 ms/window 18.44 tok/window 1.81 sha 0e5a2748
+Bsha-b CTXRUN 128000 tail 1 prompt_n 9235 1350 tok/s decode 116.0 n 300 wall 9.5 ms/window 17.59 tok/window 2.04 sha 16f53f22
+Bsha-b CTXRUN 128000 tail 2 prompt_n 9230 1238 tok/s decode 93.8 n 300 wall 10.7 ms/window 18.70 tok/window 1.75 sha 01105e39
+Bsha-b CTX 128000 prompt_n 126994 prompt 3706 tok/s decode median 98.0 ms/window mean 18.24 [18.44, 17.59, 18.7]
+Bsha-b GTT MiB: 17 vram 23881 | 19 vram 22578 |  expert cache 11046 slots expert cache 8789 slots 
+Bsha-b TOTAL 126989 gpu 29660 qsa select=3973 qsa attn=1840 kv stage=715 wait copy=468 gemm gate/up=7075
+V1-thread+prefetch+rows needles 30000: 3/3  prompt_n 29854 3300 tok/s, decode 111.3 tok/s (152 tok)
+V1-thread+prefetch+rows needles 128000: 3/3  prompt_n 127040 4032 tok/s, decode 110.7 tok/s (161 tok)
+V1-thread+prefetch+rows needles 236000: 3/3  prompt_n 234143 4046 tok/s, decode 136.7 tok/s (172 tok)
+V1-thread+prefetch+rows VALIDATE 15/15
+V1-thread+prefetch+rows CTXRUN 8000 tail 0 prompt_n 7995 1875 tok/s decode 92.8 n 300 wall 7.5 ms/window 16.74 tok/window 1.55 sha 79b7fdbf
+V1-thread+prefetch+rows CTXRUN 8000 tail 1 prompt_n 7996 1822 tok/s decode 131.0 n 300 wall 6.7 ms/window 16.01 tok/window 2.10 sha 7b921408
+V1-thread+prefetch+rows CTXRUN 8000 tail 2 prompt_n 7991 1818 tok/s decode 104.0 n 300 wall 7.3 ms/window 16.78 tok/window 1.74 sha a5377286
+V1-thread+prefetch+rows CTX 8000 prompt_n 7995 prompt 1875 tok/s decode median 104.0 ms/window mean 16.51 [16.74, 16.01, 16.78]
+V1-thread+prefetch+rows CTXRUN 128000 tail 0 prompt_n 126994 4020 tok/s decode 91.6 n 300 wall 34.9 ms/window 17.70 tok/window 1.62 sha edb82f78
+V1-thread+prefetch+rows CTXRUN 128000 tail 1 prompt_n 9235 1614 tok/s decode 116.3 n 300 wall 8.4 ms/window 17.43 tok/window 2.03 sha 26e062ea
+V1-thread+prefetch+rows CTXRUN 128000 tail 2 prompt_n 9230 1437 tok/s decode 94.2 n 300 wall 9.7 ms/window 18.74 tok/window 1.76 sha 81270e61
+V1-thread+prefetch+rows CTX 128000 prompt_n 126994 prompt 4020 tok/s decode median 94.2 ms/window mean 17.96 [17.7, 17.43, 18.74]
+V1-thread+prefetch+rows CTXRUN 240000 tail 0 prompt_n 238068 4063 tok/s decode 88.1 n 300 wall 62.1 ms/window 19.46 tok/window 1.71 sha 016d4b57
+V1-thread+prefetch+rows CTXRUN 240000 tail 1 prompt_n 21493 1946 tok/s decode 110.0 n 300 wall 13.9 ms/window 17.26 tok/window 1.90 sha 64cbe205
+V1-thread+prefetch+rows CTXRUN 240000 tail 2 prompt_n 21488 2091 tok/s decode 92.0 n 300 wall 13.7 ms/window 19.64 tok/window 1.81 sha c8d1861f
+V1-thread+prefetch+rows CTX 240000 prompt_n 238068 prompt 4063 tok/s decode median 92.0 ms/window mean 18.79 [19.46, 17.26, 19.64]
+V1-thread+prefetch+rows GTT MiB: 17 vram 23885 | 33 vram 22746 |  expert cache 11046 slots expert cache 8789 slots 
+V1-thread+prefetch+rows TOTAL 127035 gpu 27572 qsa select=1967 qsa attn=1800 kv stage=2 wait copy=892 gemm gate/up=7028
+V1-thread+prefetch+rows TOTAL 234138 gpu 53466 qsa select=4724 qsa attn=3330 kv stage=3 wait copy=1718 gemm gate/up=12907
+V1-thread+prefetch+rows TOTAL 126989 gpu 27712 qsa select=1971 qsa attn=1800 kv stage=2 wait copy=686 gemm gate/up=7025
+V1-thread+prefetch+rows TOTAL 238063 gpu 53278 qsa select=4864 qsa attn=3386 kv stage=3 wait copy=1175 gemm gate/up=13117
+V1-thread+prefetch+rows DEEPEST 12K chunk gpu 2799 qsa select=402 qsa attn=171 kv stage=1 wait copy=74 gemm gate/up=883
+Q6 DONE
