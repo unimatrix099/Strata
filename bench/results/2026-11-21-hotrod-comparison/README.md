@@ -45,3 +45,19 @@ std-suite step after a previous engine had been killed 15 s earlier; the engine 
 (400% CPU each) and 8 GB of GPU1 held (pids 73902, 74450); a second engine started behind it hung the same way. Needs a container/GPU reset. The same config
 had started fine 4 times before. (3) none of HotRod's own features (low-RAM tiers, stand-ins, learned look-ahead) matter on this
 125 GB RAM box; the test shows its engine on hardware it was not built for. Not a verdict on its RTX 3060 / SSD-streaming use.
+
+---
+# Follow-up: why HotRod decodes ~45% slower under sampling (21 Nov, scripts/samp.py, 3 prompts x 400 tokens, tok/s per prompt)
+
+| | greedy | temp 1.0, top_p .95, top_k 20 | temp 1.0 only |
+|---|---|---|---|
+| HotRod-matched (--pipeline-windows 2) | 119 / 97 / 113 | 69 / 57 / 59 | 66 / 54 / 58 |
+| HotRod, --pipeline-windows removed | 64 / 57 / 63 | 61 / 55 / 60 | 62 / 54 / 56 |
+| ours (prod-1120 config) | 148 / 107 / 123 | 129 / 93 / 117 | 121 / 100 / 118 |
+
+- Draft acceptance is the same in every mode (~82% HotRod, ~85% ours): it is not worse drafting.
+- Without the window pipeline HotRod's greedy speed falls to its sampled speed (~60). So in HotRod the 2-window pipeline only runs for
+  greedy requests; any temperature > 0 uses the unpipelined path, which costs ~45% on this 2-GPU layer split. Ours pipelines sampled
+  requests too (sampled 5-10% below greedy). HotRod's own docs report no such gap on its single RTX 3060 (no split, no pipeline there).
+- Why it matters: the standard-v1 suite and normal chat use temperature 1.0, so HotRod's greedy numbers (100-106) overstate what a
+  chat client sees on this box (~55-58). Where in HotRod's code the gate sits was not located (no pipeline/temperature match in src/program, serve).
