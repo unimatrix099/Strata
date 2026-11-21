@@ -1,0 +1,128 @@
+diff --git a/include/strata/core/subfit_rule.hpp b/include/strata/core/subfit_rule.hpp
+index 948de76c7..8957738ea 100644
+--- a/include/strata/core/subfit_rule.hpp
++++ b/include/strata/core/subfit_rule.hpp
+@@ -13,7 +13,7 @@
+ //   - mode off (or no fit): the cap refuses a move past the cap, exactly as before the learner existed.
+ #pragma once
+ 
+-#ifdef __CUDACC__
++#if defined(__CUDACC__) || defined(__HIPCC__)
+ #define STRATA_SUBFIT_HD __host__ __device__ __forceinline__
+ #else
+ #define STRATA_SUBFIT_HD inline
+diff --git a/include/strata/hip_compat/cuda_runtime.h b/include/strata/hip_compat/cuda_runtime.h
+index 9f2e2f188..b9f17d094 100644
+--- a/include/strata/hip_compat/cuda_runtime.h
++++ b/include/strata/hip_compat/cuda_runtime.h
+@@ -147,3 +147,20 @@ inline hipError_t cudaGraphInstantiate(hipGraphExec_t* exec, hipGraph_t graph,
+ #define cudaMemcpyFromSymbol(dst, symbol, ...) hipMemcpyFromSymbol(dst, HIP_SYMBOL(symbol), __VA_ARGS__)
+ 
+ #include "intrinsics.hpp"
++
++// HIP port additions (symbols HotRod's host code uses that the shim lacked)
++#ifndef cudaErrorInvalidValue
++#define cudaErrorInvalidValue hipErrorInvalidValue
++#endif
++#ifndef cudaErrorUnknown
++#define cudaErrorUnknown hipErrorUnknown
++#endif
++#ifndef cudaHostGetFlags
++#define cudaHostGetFlags hipHostGetFlags
++#endif
++#ifndef cudaEventDefault
++#define cudaEventDefault hipEventDefault
++#endif
++#ifndef cudaMemcpyKind
++#define cudaMemcpyKind hipMemcpyKind
++#endif
+diff --git a/include/strata/kernels/la_cadence.hpp b/include/strata/kernels/la_cadence.hpp
+index ebdeaa27f..ba5589345 100644
+--- a/include/strata/kernels/la_cadence.hpp
++++ b/include/strata/kernels/la_cadence.hpp
+@@ -16,7 +16,7 @@
+ #include <climits>
+ #include <cmath>
+ 
+-#if defined(__CUDACC__)
++#if defined(__CUDACC__) || defined(__HIPCC__)
+ #define STRATA_LA_HD __host__ __device__ __forceinline__
+ #else
+ #define STRATA_LA_HD inline
+diff --git a/include/strata/platform/hip_compat/strata_hip.h b/include/strata/platform/hip_compat/strata_hip.h
+index 180a1f6d6..93db5d522 100644
+--- a/include/strata/platform/hip_compat/strata_hip.h
++++ b/include/strata/platform/hip_compat/strata_hip.h
+@@ -307,3 +307,20 @@ static __device__ __forceinline__ unsigned int strata_byte_perm(unsigned int x,
+ #define __byte_perm(x, y, s) strata_byte_perm((unsigned int) (x), (unsigned int) (y), (unsigned int) (s))
+ 
+ #endif  // device side
++
++// HIP port additions (symbols HotRod's host code uses that the shim lacked)
++#ifndef cudaErrorInvalidValue
++#define cudaErrorInvalidValue hipErrorInvalidValue
++#endif
++#ifndef cudaErrorUnknown
++#define cudaErrorUnknown hipErrorUnknown
++#endif
++#ifndef cudaHostGetFlags
++#define cudaHostGetFlags hipHostGetFlags
++#endif
++#ifndef cudaEventDefault
++#define cudaEventDefault hipEventDefault
++#endif
++#ifndef cudaMemcpyKind
++#define cudaMemcpyKind hipMemcpyKind
++#endif
+diff --git a/src/kernels/cuda/iq_kernels.cu b/src/kernels/cuda/iq_kernels.cu
+index 3334d8404..835f91f07 100644
+--- a/src/kernels/cuda/iq_kernels.cu
++++ b/src/kernels/cuda/iq_kernels.cu
+@@ -1853,7 +1853,7 @@ __global__ void __launch_bounds__(256, MINB) expdec_gu_kernel(const unsigned lon
+                                                                             float* __restrict__ gate, float* __restrict__ up, int rb) {
+     const int ng = *n_groups;
+     if (blockIdx.y >= ng) return;
+-    __shared__ alignas(16) int4 s_u[ED_NC * 2 * ED_XB];
++    __shared__ __align__(16) int4 s_u[ED_NC * 2 * ED_XB];
+     __shared__ float s_ds[ED_NC * ED_XB];
+     STRATA_SHARED_ALIGN16_U32(s_grid_buf, EdGrid<TG>::words);
+     const int tid = threadIdx.x;
+@@ -2040,7 +2040,7 @@ __global__ void __launch_bounds__(256, STRATA_EXPDEC_MINB) expdec_down_kernel(co
+     if (blockIdx.y >= ng) return;
+     constexpr int LANES = TD == 20 ? 8 : 16;
+     constexpr int RPP = (256 / LANES) * R;   // rows per pass
+-    __shared__ alignas(16) int4 s_u[ED_NC * 2 * ED_HB];
++    __shared__ __align__(16) int4 s_u[ED_NC * 2 * ED_HB];
+     __shared__ float s_ds[ED_NC * ED_HB];
+     const int tid = threadIdx.x;
+     const int sw = tid / LANES, t = tid % LANES;
+diff --git a/src/kernels/cuda/native_router.cu b/src/kernels/cuda/native_router.cu
+index 4cce8d4a7..fe19deb39 100644
+--- a/src/kernels/cuda/native_router.cu
++++ b/src/kernels/cuda/native_router.cu
+@@ -114,7 +114,12 @@ __device__ __forceinline__ void route_warp_top10(const float* __restrict__ logit
+                                                  float* __restrict__ weights, const int lane) {
+     float values[16];
+ #pragma unroll
+-    for (int i = 0; i < 16; ++i) values[i] = __ldcg(logits + lane + i * 32);
++    for (int i = 0; i < 16; ++i) 
++#if defined(__HIP_PLATFORM_AMD__)
++        values[i] = __builtin_nontemporal_load(logits + lane + i * 32);   // HIP port: no __ldcg; a load that bypasses the CU's cache
++#else
++        values[i] = __ldcg(logits + lane + i * 32);
++#endif
+     __syncwarp();
+     float maximum = -INFINITY;
+ #pragma unroll
+@@ -1883,7 +1888,11 @@ __device__ __forceinline__ float la_block_sum(float v, float* sh) {
+ }
+ __device__ __forceinline__ unsigned long long la_now() {   // the GPU's clock (ns), for the timing only
+     unsigned long long now;
++#if defined(__HIP_PLATFORM_AMD__)
++    now = (unsigned long long) wall_clock64() * 10ull;   // HIP port: 100 MHz constant clock -> ns
++#else
+     asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(now));
++#endif
+     return now;
+ }
+ 
